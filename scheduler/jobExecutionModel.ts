@@ -1,0 +1,44 @@
+import mongoose, { Schema, Document, Model } from "mongoose";
+
+export interface IJobExecution extends Document {
+  _id: mongoose.Types.ObjectId;
+  jobId: mongoose.Types.ObjectId;
+  startedAt: Date;
+  completedAt: Date | null;
+  status: string;
+  httpStatus: number | null;
+  responseTime: number | null;
+  errorMessage: string | null;
+  retryNumber: number;
+  requestUrl: string;
+  requestBody: unknown;
+  responseBody: string | null;
+}
+
+const JobExecutionSchema = new Schema<IJobExecution>(
+  {
+    jobId: { type: Schema.Types.ObjectId, ref: "CronJob", required: true },
+    startedAt: { type: Date, default: Date.now },
+    completedAt: { type: Date, default: null },
+    status: {
+      type: String,
+      enum: ["PENDING", "RUNNING", "SUCCESS", "FAILED", "TIMEOUT", "RETRY"],
+      default: "PENDING",
+    },
+    httpStatus: { type: Number, default: null },
+    responseTime: { type: Number, default: null },
+    errorMessage: { type: String, default: null },
+    retryNumber: { type: Number, default: 0 },
+    requestUrl: { type: String, required: true },
+    requestBody: { type: Schema.Types.Mixed, default: null },
+    responseBody: { type: String, default: null },
+  },
+  { timestamps: false }
+);
+
+JobExecutionSchema.index({ jobId: 1, startedAt: -1 });
+JobExecutionSchema.index({ status: 1 });
+
+export const JobExecutionModel: Model<IJobExecution> =
+  mongoose.models.JobExecution ||
+  mongoose.model<IJobExecution>("JobExecution", JobExecutionSchema);

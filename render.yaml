@@ -1,0 +1,22 @@
+services:
+  - type: worker
+    name: cronjob-scheduler
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm run scheduler
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: NODE_ENV
+        value: production
+      - key: SCHEDULER_POLL_INTERVAL_MS
+        value: "10000"
+      - key: SCHEDULER_HEARTBEAT_INTERVAL_MS
+        value: "30000"
+      - key: SCHEDULER_MAX_CONCURRENT_JOBS
+        value: "5"
+      - key: RATELIMIT_SECRET
+        sync: false
+      - key: NEXTAUTH_SECRET
+        sync: false
