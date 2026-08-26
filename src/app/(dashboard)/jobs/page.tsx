@@ -6,6 +6,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import StatusBadge from "@/components/StatusBadge";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import EmptyState from "@/components/EmptyState";
+import ResponseInspector from "@/components/ResponseInspector";
 import { useToast } from "@/components/Toast";
 import { formatRelativeTime } from "@/lib/utils";
 
@@ -26,6 +27,23 @@ interface Job {
   }>;
 }
 
+interface ResponseInspectorResult {
+  status: string;
+  httpStatus: number | null;
+  responseTime: number | null;
+  errorMessage: string | null;
+  responseBody: string | null;
+  responseHeaders?: Record<string, string> | null;
+  responseSize?: number;
+  requestUrl?: string;
+  requestMethod?: string;
+  requestHeaders?: Record<string, string> | null;
+  queryParams?: Record<string, string> | null;
+  requestBody?: unknown;
+  startedAt?: string;
+  completedAt?: string;
+}
+
 export default function JobsPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,6 +51,8 @@ export default function JobsPage() {
   const [deleting, setDeleting] = useState(false);
   const [triggeringId, setTriggeringId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [showInspector, setShowInspector] = useState(false);
+  const [inspectorResult, setInspectorResult] = useState<ResponseInspectorResult | null>(null);
   const { showToast } = useToast();
 
   const fetchJobs = useCallback(async () => {
@@ -102,6 +122,8 @@ export default function JobsPage() {
           "Executed: " + (data.execution.httpStatus || data.execution.status),
           data.execution.status === "SUCCESS" ? "success" : "error"
         );
+        setInspectorResult(data.execution);
+        setShowInspector(true);
         fetchJobs();
       } else {
         showToast(data.error || "Trigger failed", "error");
@@ -287,6 +309,12 @@ export default function JobsPage() {
         onConfirm={handleDelete}
         onCancel={() => setDeleteId(null)}
         loading={deleting}
+      />
+
+      <ResponseInspector
+        open={showInspector}
+        onClose={() => setShowInspector(false)}
+        result={inspectorResult}
       />
     </DashboardLayout>
   );

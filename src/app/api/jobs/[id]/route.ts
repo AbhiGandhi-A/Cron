@@ -133,6 +133,9 @@ export async function PUT(
       updateData.nextRunAt = nextRunAt;
     }
     if (data.isActive !== undefined) updateData.isActive = data.isActive;
+    if (data.bodyType !== undefined) updateData.bodyType = data.bodyType;
+    if (data.queryParams !== undefined) updateData.queryParams = data.queryParams || null;
+    if (data.notifications !== undefined) updateData.notifications = data.notifications || undefined;
     if (data.timeout !== undefined) updateData.timeout = data.timeout;
     if (data.retryCount !== undefined) updateData.retryCount = data.retryCount;
 

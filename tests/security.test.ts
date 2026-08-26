@@ -690,12 +690,12 @@ test("Job schema: only allowed HTTP methods", () => {
   const blocked = createJobSchema.safeParse({
     name: "Test",
     url: "https://example.com",
-    method: "HEAD",
+    method: "INVALID",
     schedule: "*/5 * * * *",
     timeout: 30000,
     retryCount: 1,
   });
-  assert.equal(blocked.success, false, "Method HEAD should be rejected");
+  assert.equal(blocked.success, false, "Method INVALID should be rejected");
 });
 
 // ============================================================

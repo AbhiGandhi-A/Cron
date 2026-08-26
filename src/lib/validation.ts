@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const allowedMethods = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
+const allowedMethods = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const;
 
 const safeString = (maxLength: number, field: string) =>
   z
@@ -21,18 +21,20 @@ export const createJobSchema = z.object({
     }
   }, "Only HTTP/HTTPS URLs are allowed"),
   method: z.enum(allowedMethods),
-  headers: z.record(z.string().max(255), z.string().max(4096)).optional().nullable().refine((value) => {
-    if (!value) return true;
-    return Object.entries(value).every(([key, headerValue]) => {
-      const normalized = key.toLowerCase();
-      return !["authorization", "cookie", "set-cookie", "x-api-key", "proxy-authorization"].includes(normalized) && String(headerValue).length <= 4096;
-    });
-  }, "Sensitive headers are not allowed here"),
+  headers: z.record(z.string().max(255), z.string().max(4096)).optional().nullable(),
   body: z.any().optional().nullable(),
+  bodyType: z.enum(["none", "json", "form", "text"]).default("none"),
+  queryParams: z.record(z.string().max(255), z.string().max(2048)).optional().nullable(),
   schedule: safeString(255, "Schedule"),
   isActive: z.boolean().default(true),
   timeout: z.number().int().min(1000).max(300000).default(30000),
   retryCount: z.number().int().min(0).max(10).default(3),
+  notifications: z.object({
+    enabled: z.boolean().default(false),
+    url: z.string().max(2048).default(""),
+    failureThreshold: z.number().int().min(1).max(100).default(1),
+    notifyOnRecovery: z.boolean().default(true),
+  }).optional().nullable(),
 }).strict();
 
 export const updateJobSchema = createJobSchema.partial();

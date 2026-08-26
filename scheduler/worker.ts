@@ -5,6 +5,7 @@ import { executeWithRetry } from "./retry";
 import { logger } from "./logger";
 import cronParser from "cron-parser";
 import { checkMonthlyExecutionLimit } from "./limits";
+import { checkAndNotify } from "./notifications";
 
 export async function processJob(jobId: string): Promise<void> {
   const lock = await CronJobModel.findOneAndUpdate(
@@ -62,6 +63,24 @@ export async function processJob(jobId: string): Promise<void> {
       "Job " + lock.name + " completed: " + status + " (HTTP " + (result.httpStatus || "N/A") + ")"
     );
 
+    try {
+      await checkAndNotify(
+        {
+          _id: lock._id.toString(),
+          name: lock.name,
+          notifications: (lock as unknown as Record<string, unknown>).notifications as {
+            enabled: boolean;
+            url: string;
+            failureThreshold: number;
+            notifyOnRecovery: boolean;
+          },
+          consecutiveFailures: ((lock as unknown as Record<string, unknown>).consecutiveFailures as number) ?? 0,
+        },
+        status,
+        result.httpStatus ?? null
+      );
+    } catch {}
+
     await SchedulerHeartbeatModel.findByIdAndUpdate(
       "scheduler",
       {
@@ -86,5 +105,23 @@ export async function processJob(jobId: string): Promise<void> {
       lastRunAt: new Date(),
       nextRunAt,
     });
+
+    try {
+      await checkAndNotify(
+        {
+          _id: lock._id.toString(),
+          name: lock.name,
+          notifications: (lock as unknown as Record<string, unknown>).notifications as {
+            enabled: boolean;
+            url: string;
+            failureThreshold: number;
+            notifyOnRecovery: boolean;
+          },
+          consecutiveFailures: ((lock as unknown as Record<string, unknown>).consecutiveFailures as number) ?? 0,
+        },
+        "FAILED",
+        null
+      );
+    } catch {}
   }
 }

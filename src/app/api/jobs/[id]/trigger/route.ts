@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import connectDb from "@/lib/mongodb";
 import { CronJob, JobExecution, User } from "@/lib/models";
-import { enforceRateLimit, getAuthenticatedIdentifier, logError, sanitizeObjectForStorage, sanitizeUrlForLog, validateObjectId, validateOutboundUrl } from "@/lib/security";
+import { enforceRateLimit, getAuthenticatedIdentifier, logError, redactHeaders, sanitizeObjectForStorage, sanitizeUrlForLog, validateObjectId, validateOutboundUrl } from "@/lib/security";
 import cronParser from "cron-parser";
 
 async function getUserId(): Promise<string | null> {
@@ -22,11 +22,14 @@ async function executeJobRequest(config: {
   headers: unknown;
   body: unknown;
   timeout: number;
+  queryParams: Record<string, string> | null;
 }): Promise<{
   httpStatus: number | null;
   responseTime: number;
   errorMessage: string | null;
   responseBody: string | null;
+  responseHeaders: Record<string, string> | null;
+  responseSize: number;
 }> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), config.timeout);
@@ -43,6 +46,15 @@ async function executeJobRequest(config: {
     }
   }
 
+  let fullUrl = config.url;
+  if (config.queryParams && Object.keys(config.queryParams).length > 0) {
+    const urlObj = new URL(config.url);
+    for (const [key, value] of Object.entries(config.queryParams)) {
+      urlObj.searchParams.set(key, value);
+    }
+    fullUrl = urlObj.toString();
+  }
+
   const startTime = Date.now();
   try {
     const fetchOptions: RequestInit = {
@@ -56,12 +68,12 @@ async function executeJobRequest(config: {
       fetchOptions.body = JSON.stringify(config.body);
     }
 
-    const response = await fetch(config.url, fetchOptions);
+    const response = await fetch(fullUrl, fetchOptions);
     if ([301, 302, 303, 307, 308].includes(response.status)) {
       const location = response.headers.get("location");
       if (location) {
         try {
-          const redirectUrl = new URL(location, config.url);
+          const redirectUrl = new URL(location, fullUrl);
           await validateOutboundUrl(redirectUrl.toString());
         } catch {
           clearTimeout(timeoutId);
@@ -70,6 +82,8 @@ async function executeJobRequest(config: {
             responseTime: Date.now() - startTime,
             errorMessage: "Redirect to blocked destination",
             responseBody: null,
+            responseHeaders: null,
+            responseSize: 0,
           };
         }
       }
@@ -81,6 +95,11 @@ async function executeJobRequest(config: {
       ? rawBody.substring(0, MAX_RESPONSE_BODY_BYTES)
       : rawBody;
 
+    const respHeaders: Record<string, string> = {};
+    response.headers.forEach((value, key) => {
+      respHeaders[key] = value;
+    });
+
     clearTimeout(timeoutId);
 
     return {
@@ -88,6 +107,8 @@ async function executeJobRequest(config: {
       responseTime,
       errorMessage: null,
       responseBody,
+      responseHeaders: respHeaders,
+      responseSize: rawBody.length,
     };
   } catch (error: unknown) {
     const responseTime = Date.now() - startTime;
@@ -101,6 +122,8 @@ async function executeJobRequest(config: {
       responseTime,
       errorMessage: errorMessage.substring(0, MAX_ERROR_MESSAGE_BYTES),
       responseBody: null,
+      responseHeaders: null,
+      responseSize: 0,
     };
   }
 }
@@ -114,6 +137,7 @@ async function executeWithRetry(
     body: unknown;
     timeout: number;
     retryCount: number;
+    queryParams: Record<string, string> | null;
   },
   retryNumber: number = 0
 ): Promise<{
@@ -121,6 +145,8 @@ async function executeWithRetry(
   responseTime: number;
   errorMessage: string | null;
   responseBody: string | null;
+  responseHeaders: Record<string, string> | null;
+  responseSize: number;
 }> {
   await connectDb();
 
@@ -129,6 +155,9 @@ async function executeWithRetry(
     status: "RUNNING",
     requestUrl: sanitizeUrlForLog(job.url),
     requestBody: sanitizeObjectForStorage(job.body),
+    requestMethod: job.method,
+    requestHeaders: redactHeaders(job.headers as Record<string, string> | null),
+    queryParams: job.queryParams || null,
     retryNumber,
   });
 
@@ -138,6 +167,7 @@ async function executeWithRetry(
     headers: job.headers,
     body: job.body,
     timeout: job.timeout,
+    queryParams: job.queryParams,
   });
 
   const status = result.httpStatus && result.httpStatus < 400 ? "SUCCESS" : "FAILED";
@@ -148,6 +178,8 @@ async function executeWithRetry(
     responseTime: result.responseTime,
     errorMessage: result.errorMessage,
     responseBody: result.responseBody ? result.responseBody.substring(0, 20000) : null,
+    responseHeaders: redactHeaders(result.responseHeaders),
+    responseSize: result.responseSize,
     completedAt: new Date(),
   });
 
@@ -237,6 +269,7 @@ export async function POST(
       body: sanitizeObjectForStorage(lock.body),
       timeout: lock.timeout,
       retryCount: lock.retryCount,
+      queryParams: lock.queryParams || null,
     });
 
     const finalStatus = result.httpStatus && result.httpStatus < 400 ? "SUCCESS" : "FAILED";
@@ -261,6 +294,16 @@ export async function POST(
         httpStatus: result.httpStatus,
         responseTime: result.responseTime,
         errorMessage: result.errorMessage,
+        responseBody: result.responseBody,
+        responseHeaders: result.responseHeaders,
+        responseSize: result.responseSize,
+        requestUrl: lock.url,
+        requestMethod: lock.method,
+        requestHeaders: redactHeaders(lock.headers as Record<string, string> | null),
+        queryParams: lock.queryParams || null,
+        requestBody: lock.body,
+        startedAt: new Date(Date.now() - result.responseTime).toISOString(),
+        completedAt: new Date().toISOString(),
       },
       usage: {
         current: currentMonthCount + 1,

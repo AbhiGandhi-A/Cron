@@ -15,6 +15,11 @@ export interface IJobExecution extends Document {
   requestUrl: string;
   requestBody: unknown;
   responseBody: string | null;
+  requestMethod: string;
+  requestHeaders: Record<string, string> | null;
+  queryParams: Record<string, string> | null;
+  responseHeaders: Record<string, string> | null;
+  responseSize: number;
 }
 
 const JobExecutionSchema = new Schema<IJobExecution>(
@@ -34,6 +39,11 @@ const JobExecutionSchema = new Schema<IJobExecution>(
     requestUrl: { type: String, required: true },
     requestBody: { type: Schema.Types.Mixed, default: null },
     responseBody: { type: String, default: null },
+    requestMethod: { type: String, default: "GET" },
+    requestHeaders: { type: Schema.Types.Mixed, default: null },
+    queryParams: { type: Schema.Types.Mixed, default: null },
+    responseHeaders: { type: Schema.Types.Mixed, default: null },
+    responseSize: { type: Number, default: 0 },
   },
   { timestamps: false }
 );

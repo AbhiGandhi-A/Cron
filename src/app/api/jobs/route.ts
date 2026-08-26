@@ -115,10 +115,13 @@ export async function POST(req: Request) {
       method: data.method,
       headers: data.headers || null,
       body: sanitizeObjectForStorage(data.body || null),
+      bodyType: data.bodyType,
+      queryParams: data.queryParams || null,
       schedule: data.schedule,
       isActive: data.isActive,
       timeout: data.timeout,
       retryCount: data.retryCount,
+      notifications: data.notifications || undefined,
       nextRunAt,
     });
 
