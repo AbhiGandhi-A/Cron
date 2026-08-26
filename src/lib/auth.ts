@@ -55,36 +55,6 @@ export const authOptions: NextAuthOptions = {
     strategy: "jwt",
     maxAge: 60 * 60 * 8,
   },
-  cookies: {
-    sessionToken: {
-      name: "cronjob_session",
-      options: {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
-        path: "/",
-        maxAge: 60 * 60 * 8,
-      },
-    },
-    callbackUrl: {
-      name: "cronjob_callback",
-      options: {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
-        path: "/",
-      },
-    },
-    csrfToken: {
-      name: "cronjob_csrf",
-      options: {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
-        path: "/",
-      },
-    },
-  },
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
