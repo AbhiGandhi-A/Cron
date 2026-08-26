@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { createServer } from "http";
 
 import { startScheduler, stopScheduler } from "./scheduler";
 import { logger } from "./logger";
@@ -32,6 +33,22 @@ async function main() {
     logger.error("index", "MONGODB_URI is not set. Make sure .env contains MONGODB_URI and you run from the project root.");
     throw new Error("MONGODB_URI is not set");
   }
+
+  const port = parseInt(process.env.PORT || "3000", 10);
+
+  const server = createServer((req, res) => {
+    if (req.url === "/health") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ status: "ok", uptime: process.uptime() }));
+    } else {
+      res.writeHead(404);
+      res.end();
+    }
+  });
+
+  server.listen(port, () => {
+    logger.info("index", "Health server listening on port " + port);
+  });
 
   await startScheduler();
 }
