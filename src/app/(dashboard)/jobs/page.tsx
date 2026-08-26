@@ -32,6 +32,7 @@ export default function JobsPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [triggeringId, setTriggeringId] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
   const { showToast } = useToast();
 
   const fetchJobs = useCallback(async () => {
@@ -72,6 +73,7 @@ export default function JobsPage() {
   }
 
   async function handleToggle(id: string) {
+    setTogglingId(id);
     try {
       const res = await fetch("/api/jobs/" + id + "/toggle", { method: "POST" });
       const data = await res.json();
@@ -80,9 +82,13 @@ export default function JobsPage() {
         setJobs((prev) =>
           prev.map((j) => (j._id === id ? { ...j, isActive: !j.isActive } : j))
         );
+      } else {
+        showToast(data.error || "Failed to toggle", "error");
       }
     } catch {
       showToast("Failed to toggle job", "error");
+    } finally {
+      setTogglingId(null);
     }
   }
 
@@ -166,7 +172,7 @@ export default function JobsPage() {
                   <tr className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider bg-gray-50/80">
                     <th className="px-6 py-3">Job</th>
                     <th className="px-6 py-3 hidden md:table-cell">Schedule</th>
-                    <th className="px-6 py-3">Status</th>
+                    <th className="px-6 py-3">Enabled</th>
                     <th className="px-6 py-3 hidden lg:table-cell">Last Run</th>
                     <th className="px-6 py-3 hidden lg:table-cell">Next Run</th>
                     <th className="px-6 py-3 hidden sm:table-cell">Result</th>
@@ -192,7 +198,18 @@ export default function JobsPage() {
                         </span>
                       </td>
                       <td className="px-6 py-4">
-                        <StatusBadge status={job.isActive ? "ACTIVE" : "INACTIVE"} size="sm" />
+                        <button
+                          onClick={() => handleToggle(job._id)}
+                          disabled={togglingId === job._id}
+                          className={"relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 disabled:opacity-50 " + (job.isActive ? "bg-brand-600" : "bg-gray-300")}
+                          title={job.isActive ? "Click to disable" : "Click to enable"}
+                          role="switch"
+                          aria-checked={job.isActive}
+                        >
+                          <span
+                            className={"pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out " + (job.isActive ? "translate-x-5" : "translate-x-0")}
+                          />
+                        </button>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-400 hidden lg:table-cell">
                         {job.lastRunAt ? formatRelativeTime(job.lastRunAt) : "Never"}
@@ -220,21 +237,6 @@ export default function JobsPage() {
                             ) : (
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" />
-                              </svg>
-                            )}
-                          </button>
-                          <button
-                            onClick={() => handleToggle(job._id)}
-                            className={"p-2 rounded-lg transition-colors " + (job.isActive ? "text-emerald-600 hover:bg-emerald-50" : "text-gray-400 hover:bg-gray-100")}
-                            title={job.isActive ? "Disable" : "Enable"}
-                          >
-                            {job.isActive ? (
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                            ) : (
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
                               </svg>
                             )}
                           </button>
