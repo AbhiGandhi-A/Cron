@@ -8,6 +8,7 @@ import { useState } from "react";
 const navItems = [
   { href: "/", label: "Dashboard", icon: "dashboard" },
   { href: "/jobs", label: "Cron Jobs", icon: "jobs" },
+  { href: "/api-tester", label: "API Tester", icon: "tester" },
   { href: "/test-urls", label: "Test URLs", icon: "webhook" },
   { href: "/settings", label: "Settings", icon: "settings" },
 ];
@@ -38,6 +39,12 @@ function NavIcon({ icon }: { icon: string }) {
       return (
         <svg className={cls} fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m9.86-2.813a4.5 4.5 0 00-6.364 0l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
+        </svg>
+      );
+    case "tester":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
         </svg>
       );
     default:
