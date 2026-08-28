@@ -4,7 +4,9 @@ import { authOptions } from "@/lib/auth";
 import { enforceRateLimit, getAuthenticatedIdentifier, logError, validatePaginationParams, readJsonBody } from "@/lib/security";
 import connectDb from "@/lib/mongodb";
 import { AiIssue } from "@/lib/models";
-import { serializeIssue } from "@/lib/ai/issues";
+import { upsertIssue, serializeIssue } from "@/lib/ai/issues";
+import { analyzeInputSchema } from "@/lib/ai/validate";
+import { sanitizeIssueInput } from "@/lib/monitoring/normalize";
 
 async function getUserId(): Promise<string | null> {
   const session = await getServerSession(authOptions);
@@ -59,6 +61,58 @@ export async function GET(req: Request) {
     });
   } catch (error) {
     logError("ai-issues", "Failed to list issues", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    const userId = await getUserId();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const limited = enforceRateLimit(`ai:issues-create:${getAuthenticatedIdentifier(userId)}`, 60, 60_000);
+    if (limited) return limited;
+
+    await connectDb();
+
+    let parsed: unknown;
+    try {
+      parsed = await readJsonBody(req, 64 * 1024);
+    } catch {
+      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    }
+
+    const result = analyzeInputSchema.safeParse(parsed);
+    if (!result.success) {
+      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    }
+
+    const sanitized = sanitizeIssueInput({
+      title: result.data.title,
+      message: result.data.message,
+      errorType: result.data.errorType,
+      endpoint: result.data.endpoint,
+      method: result.data.method,
+      status: result.data.status,
+      stack: result.data.stack,
+      kind: result.data.kind,
+      severity: result.data.severity,
+      source: result.data.source,
+      page: result.data.page,
+      userAgent: result.data.userAgent,
+      response: result.data.response,
+      context: result.data.context ?? null,
+      perf: result.data.perf ?? null,
+      retryable: result.data.retryable ?? null,
+    });
+
+    const { issue } = await upsertIssue(userId, sanitized);
+
+    return NextResponse.json({ issue: serializeIssue(issue) });
+  } catch (error) {
+    logError("ai-issues-create", "Failed to store issue", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

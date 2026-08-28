@@ -129,6 +129,7 @@ export default function AiAssistant() {
   const [filter, setFilter] = useState<"open" | "resolved" | "all">("open");
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
@@ -287,10 +288,12 @@ export default function AiAssistant() {
   async function handleAnalyzeNow() {
     if (!selectedIssue) return;
     setBusyId(selectedIssue.id);
+    setAnalyzingId(selectedIssue.id);
     try {
-      forceAnalyze(issueToInput(selectedIssue));
+      await forceAnalyze(issueToInput(selectedIssue));
     } finally {
       setBusyId(null);
+      setAnalyzingId(null);
     }
   }
 
@@ -454,6 +457,7 @@ export default function AiAssistant() {
               onToggleResolved={(issue) => void handleToggleResolved(issue)}
               onRetry={(issue) => void handleRetry(issue)}
               onAnalyzeNow={() => void handleAnalyzeNow()}
+              analyzing={analyzingId === selectedIssue?.id}
               onCopyFix={copyFix}
               followUpDraft={followUpDraft}
               onFollowUpDraftChange={(id, value) => setFollowUpDraft((drafts) => ({ ...drafts, [id]: value }))}
@@ -489,6 +493,7 @@ function IssuesTab(props: {
   filter: "open" | "resolved" | "all";
   loading: boolean;
   busyId: string | null;
+  analyzing: boolean;
   onSelect: (id: string) => void;
   onFilter: (filter: "open" | "resolved" | "all") => void;
   onReload: () => void;
@@ -551,6 +556,7 @@ function IssuesTab(props: {
             onToggleResolved={() => props.onToggleResolved(selected)}
             onRetry={() => props.onRetry(selected)}
             onAnalyzeNow={props.onAnalyzeNow}
+            analyzing={props.analyzing}
             onCopyFix={() => props.onCopyFix(selected)}
             followUpDraft={props.followUpDraft[selected.id] ?? ""}
             onFollowUpDraftChange={(value) => props.onFollowUpDraftChange(selected.id, value)}
@@ -593,6 +599,7 @@ function IssuesTab(props: {
 function IssueDetail(props: {
   issue: ApiIssue;
   busy: boolean;
+  analyzing: boolean;
   onBack: () => void;
   onToggleResolved: () => void;
   onRetry: () => void;
@@ -657,6 +664,15 @@ function IssueDetail(props: {
       </dl>
 
       <div className="flex flex-wrap gap-2">
+        {!analysis?.available && (
+          <button
+            onClick={props.onAnalyzeNow}
+            disabled={props.busy || issue.id.startsWith("local-")}
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50"
+          >
+            {props.analyzing ? "Analyzing…" : "Fix with AI"}
+          </button>
+        )}
         <button
           onClick={props.onToggleResolved}
           disabled={props.busy || issue.id.startsWith("local-")}
@@ -701,19 +717,14 @@ function IssueDetail(props: {
                 Copy fix
               </button>
             )}
-            {!analysis?.available && (
-              <button onClick={props.onAnalyzeNow} disabled={props.busy || issue.id.startsWith("local-")} className="text-[11px] font-semibold text-brand-600 hover:text-brand-700 disabled:opacity-50">
-                Analyze it
-              </button>
-            )}
           </div>
         </div>
         <div className="p-3">
           {!analysis ? (
             <p className="text-xs text-gray-400">
               {issue.id.startsWith("local-")
-                ? "Waiting for the AI to analyze this error... (opening the panel may still be processing)"
-                : "This error has not been analyzed yet. Click &quot;Analyze now&quot;."}
+                ? "Waiting for this error to appear in your issue list..."
+                : "This error has not been analyzed yet. Click &quot;Fix with AI&quot; to generate a solution."}
             </p>
           ) : !analysis.available ? (
             <p className="text-xs text-red-600">{analysis.error ?? "AI analysis is temporarily unavailable."}</p>

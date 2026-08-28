@@ -1,5 +1,5 @@
 import type { NormalizedErrorInput, AiAnalysis, AiSeverity } from "@/lib/ai/types";
-import { sanitizeIssueInput, inferSeverity } from "./normalize";
+import { sanitizeIssueInput } from "./normalize";
 import { computeFingerprint, extractStackAnchor } from "./fingerprint";
 import { getAiSettings } from "./settings";
 
@@ -7,7 +7,6 @@ const SEEN_STORAGE_KEY = "cronjobio.ai.seen";
 const DEDUP_WINDOW_MS = 24 * 60 * 60 * 1000;
 const DISPATCH_ISSUE = "cronjobio:ai:issue";
 const DISPATCH_ANALYSIS = "cronjobio:ai:analysis";
-const DISPATCH_OPEN = "cronjobio:ai:open";
 
 let initialized = false;
 
@@ -60,6 +59,19 @@ function dispatch(eventName: string, detail: Record<string, unknown>): void {
     window.dispatchEvent(new CustomEvent(eventName, { detail }));
   } catch {
     /* ignore */
+  }
+}
+
+async function persistIssue(input: NormalizedErrorInput): Promise<void> {
+  if (!isBrowser()) return;
+  try {
+    await fetch("/api/ai/issues", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  } catch {
+    /* this endpoint only stores; ignore failures */
   }
 }
 
@@ -116,14 +128,7 @@ export function captureError(input: NormalizedErrorInput): NormalizedErrorInput 
 
   if (duplicate) return sanitized;
 
-  if (settings.autoAnalyze) {
-    void sendAnalyze(sanitized);
-  }
-
-  const severity = sanitized.severity ?? inferSeverity(sanitized.status ?? null, sanitized.kind ?? "frontend");
-  if (settings.autoOpenCritical && isCriticalSeverity(severity)) {
-    dispatch(DISPATCH_OPEN, { issue: sanitized, fingerprint });
-  }
+  void persistIssue(sanitized);
 
   return sanitized;
 }
@@ -132,13 +137,9 @@ export function isCriticalSeverity(severity: AiSeverity): boolean {
   return severity === "high" || severity === "critical";
 }
 
-export function forceAnalyze(input: NormalizedErrorInput): void {
-  const settings = getAiSettings();
+export function forceAnalyze(input: NormalizedErrorInput): Promise<void> {
   const sanitized = sanitizeIssueInput(input);
-  void sendAnalyze(sanitized, { force: true });
-  if (settings.autoOpenCritical && isCriticalSeverity(sanitized.severity ?? "medium")) {
-    dispatch(DISPATCH_OPEN, { issue: sanitized });
-  }
+  return sendAnalyze(sanitized, { force: true });
 }
 
 function notifyFetchFailure(input: {
