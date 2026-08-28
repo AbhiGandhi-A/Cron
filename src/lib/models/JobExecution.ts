@@ -20,6 +20,7 @@ export interface IJobExecution extends Document {
   queryParams: Record<string, string> | null;
   responseHeaders: Record<string, string> | null;
   responseSize: number;
+  triggeredBy: "schedule" | "manual";
 }
 
 const JobExecutionSchema = new Schema<IJobExecution>(
@@ -44,6 +45,7 @@ const JobExecutionSchema = new Schema<IJobExecution>(
     queryParams: { type: Schema.Types.Mixed, default: null },
     responseHeaders: { type: Schema.Types.Mixed, default: null },
     responseSize: { type: Number, default: 0 },
+    triggeredBy: { type: String, enum: ["schedule", "manual"], default: "schedule" },
   },
   { timestamps: false }
 );

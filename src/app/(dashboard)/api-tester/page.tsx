@@ -5,7 +5,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { useToast } from "@/components/Toast";
 
 type BodyType = "none" | "json" | "form" | "text";
-type Tab = "response" | "headers" | "request";
+type Tab = "response" | "responseHeaders" | "request" | "requestHeaders";
 
 interface TestResult {
   status: string;
@@ -16,6 +16,7 @@ interface TestResult {
   responseHeaders: Record<string, string> | null;
   responseSize: number;
   requestUrl: string;
+  fullRequestUrl?: string;
   requestMethod: string;
   requestHeaders: Record<string, string>;
   sentBody: unknown;
@@ -100,6 +101,43 @@ function getStatusColor(httpStatus: number | null): string {
   return "bg-red-50 text-red-700";
 }
 
+function getStatusText(status: number | null): string {
+  if (!status) return "";
+  const texts: Record<number, string> = {
+    100: "Continue",
+    101: "Switching Protocols",
+    200: "OK",
+    201: "Created",
+    202: "Accepted",
+    204: "No Content",
+    206: "Partial Content",
+    301: "Moved Permanently",
+    302: "Found",
+    303: "See Other",
+    304: "Not Modified",
+    307: "Temporary Redirect",
+    308: "Permanent Redirect",
+    400: "Bad Request",
+    401: "Unauthorized",
+    403: "Forbidden",
+    404: "Not Found",
+    405: "Method Not Allowed",
+    408: "Request Timeout",
+    409: "Conflict",
+    410: "Gone",
+    413: "Payload Too Large",
+    415: "Unsupported Media Type",
+    422: "Unprocessable Entity",
+    429: "Too Many Requests",
+    500: "Internal Server Error",
+    501: "Not Implemented",
+    502: "Bad Gateway",
+    503: "Service Unavailable",
+    504: "Gateway Timeout",
+  };
+  return texts[status] || "";
+}
+
 function buildPairs(pairs: { key: string; value: string }[]): Record<string, string> | null {
   const result: Record<string, string> = {};
   for (const p of pairs) {
@@ -143,16 +181,44 @@ function KeyValueTable({
   );
 }
 
-function ResponseBodyView({ body }: { body: string }) {
+function ResponseBodyView({ body, showToast }: { body: string; showToast: (msg: string, type: "success" | "error") => void }) {
   const [showAll, setShowAll] = useState(false);
   const [rawMode, setRawMode] = useState(false);
   const truncated = body.length > 50_000;
   const displayBody = truncated && !showAll ? body.substring(0, 50_000) : body;
   const json = !rawMode && isJson(body);
 
+  function copyBody() {
+    navigator.clipboard
+      .writeText(displayBody)
+      .then(() => showToast("Response copied", "success"))
+      .catch(() => showToast("Failed to copy", "error"));
+  }
+
+  function copyJson() {
+    if (!isJson(body)) return;
+    const formatted = JSON.stringify(JSON.parse(body), null, 2);
+    navigator.clipboard
+      .writeText(formatted)
+      .then(() => showToast("JSON copied", "success"))
+      .catch(() => showToast("Failed to copy", "error"));
+  }
+
+  function downloadJson() {
+    if (!isJson(body)) return;
+    const formatted = JSON.stringify(JSON.parse(body), null, 2);
+    const blob = new Blob([formatted], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `response-${new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-")}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div>
-      <div className="flex items-center gap-2 mb-2">
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
         {isJson(body) && (
           <div className="flex bg-gray-100 rounded-lg p-0.5">
             <button
@@ -179,7 +245,33 @@ function ResponseBodyView({ body }: { body: string }) {
             </button>
           </div>
         )}
-        <span className="text-xs text-gray-400">{formatBytes(body.length)}</span>
+        <div className="flex items-center gap-1 ml-auto">
+          <button
+            onClick={copyBody}
+            className="px-2.5 py-1 text-xs font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+          >
+            Copy
+          </button>
+          {isJson(body) && (
+            <>
+              <button
+                onClick={copyJson}
+                className="px-2.5 py-1 text-xs font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+              >
+                Copy JSON
+              </button>
+              <button
+                onClick={downloadJson}
+                className="px-2.5 py-1 text-xs font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors flex items-center gap-1"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Download
+              </button>
+            </>
+          )}
+        </div>
       </div>
       <pre className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-xs font-mono text-gray-800 overflow-x-auto whitespace-pre-wrap break-all max-h-[500px] overflow-y-auto">
         {json
@@ -187,12 +279,17 @@ function ResponseBodyView({ body }: { body: string }) {
           : displayBody}
       </pre>
       {truncated && !showAll && (
-        <button
-          onClick={() => setShowAll(true)}
-          className="mt-2 text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors"
-        >
-          Show all ({formatBytes(body.length)})
-        </button>
+        <div className="flex items-center gap-3 mt-2">
+          <button
+            onClick={() => setShowAll(true)}
+            className="text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors"
+          >
+            Show all ({formatBytes(body.length)})
+          </button>
+          <span className="text-xs text-amber-500">
+            Response truncated because it exceeds the maximum allowed size.
+          </span>
+        </div>
       )}
     </div>
   );
@@ -764,6 +861,11 @@ export default function ApiTesterPage() {
                   }
                 >
                   {result.httpStatus || result.status}
+                  {result.httpStatus && getStatusText(result.httpStatus) && (
+                    <span className="ml-1 font-normal opacity-70">
+                      {getStatusText(result.httpStatus)}
+                    </span>
+                  )}
                 </span>
               </div>
               <button
@@ -799,6 +901,9 @@ export default function ApiTesterPage() {
                 <span className="text-gray-400">Status</span>{" "}
                 <span className="font-medium text-gray-700">
                   {result.httpStatus ?? "N/A"}
+                  {result.httpStatus && getStatusText(result.httpStatus) && (
+                    <span className="text-gray-500"> — {getStatusText(result.httpStatus)}</span>
+                  )}
                 </span>
               </div>
               <div className="text-sm">
@@ -826,8 +931,9 @@ export default function ApiTesterPage() {
               {(
                 [
                   { id: "response" as Tab, label: "Response" },
-                  { id: "headers" as Tab, label: "Response Headers" },
+                  { id: "responseHeaders" as Tab, label: "Response Headers" },
                   { id: "request" as Tab, label: "Request" },
+                  { id: "requestHeaders" as Tab, label: "Request Headers" },
                 ] as const
               ).map((tab) => (
                 <button
@@ -852,14 +958,14 @@ export default function ApiTesterPage() {
               {activeTab === "response" && (
                 <div>
                   {result.responseBody ? (
-                    <ResponseBodyView body={result.responseBody} />
+                    <ResponseBodyView body={result.responseBody} showToast={showToast} />
                   ) : (
                     <p className="text-sm text-gray-400 italic">No response body</p>
                   )}
                 </div>
               )}
 
-              {activeTab === "headers" && (
+              {activeTab === "responseHeaders" && (
                 <div>
                   {result.responseHeaders &&
                   Object.keys(result.responseHeaders).length > 0 ? (
@@ -884,22 +990,15 @@ export default function ApiTesterPage() {
                     <div className="bg-gray-50 rounded-xl p-3">
                       <p className="text-xs text-gray-400 mb-1">URL</p>
                       <p className="text-sm font-medium text-gray-900 font-mono break-all">
-                        {result.requestUrl}
+                        {result.fullRequestUrl || result.requestUrl}
                       </p>
                     </div>
                   </div>
-                  {result.requestHeaders &&
-                    Object.keys(result.requestHeaders).length > 0 && (
-                      <div>
-                        <h3 className="text-sm font-medium text-gray-700 mb-2">
-                          Request Headers
-                        </h3>
-                        <KeyValueTable
-                          data={result.requestHeaders}
-                          redactSensitive
-                        />
-                      </div>
-                    )}
+                  {result.requestUrl !== result.fullRequestUrl && result.fullRequestUrl && (
+                    <p className="text-xs text-gray-400">
+                      Sanitized URL: <span className="font-mono">{result.requestUrl}</span>
+                    </p>
+                  )}
                   {result.sentBody != null && (
                     <div>
                       <h3 className="text-sm font-medium text-gray-700 mb-2">
@@ -913,6 +1012,22 @@ export default function ApiTesterPage() {
                           : JSON.stringify(result.sentBody, null, 2)}
                       </pre>
                     </div>
+                  )}
+                </div>
+              )}
+
+              {activeTab === "requestHeaders" && (
+                <div>
+                  {result.requestHeaders &&
+                  Object.keys(result.requestHeaders).length > 0 ? (
+                    <KeyValueTable
+                      data={result.requestHeaders}
+                      redactSensitive
+                    />
+                  ) : (
+                    <p className="text-sm text-gray-400 italic">
+                      No request headers
+                    </p>
                   )}
                 </div>
               )}

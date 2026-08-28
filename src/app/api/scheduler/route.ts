@@ -56,7 +56,14 @@ export async function GET(req: Request) {
             lastHeartbeat: heartbeat.lastHeartbeat,
             jobsProcessed: heartbeat.jobsProcessed,
             lastExecutionAt: heartbeat.lastExecutionAt,
+            lastExecutionStatus: heartbeat.lastExecutionStatus,
+            lastExecutionHttpStatus: heartbeat.lastExecutionHttpStatus,
+            lastError: heartbeat.lastError,
             startedAt: heartbeat.startedAt,
+            schedulerId: heartbeat.schedulerId,
+            hostname: heartbeat.hostname,
+            pid: heartbeat.pid,
+            nodeVersion: heartbeat.nodeVersion,
           }
         : null,
     });

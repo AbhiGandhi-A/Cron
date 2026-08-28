@@ -1,15 +1,21 @@
 import { JobExecutionModel } from "./jobExecutionModel";
-import { executeJobRequest, ExecutionResult } from "./executor";
 import { logger } from "./logger";
 import mongoose from "mongoose";
-import { sanitizeForLog, sanitizeUrlForLog } from "../src/lib/security-core";
+import {
+  executeHttpRequest,
+  sanitizeRequestBodyForStorage,
+  type ExecutionResult,
+} from "../src/lib/execution-core";
+import { redactHeaders, sanitizeForLog, sanitizeUrlForLog } from "../src/lib/security-core";
 
 export interface RetryConfig {
   jobId: string;
   url: string;
   method: string;
-  headers: unknown;
+  headers: Record<string, string> | null;
   body: unknown;
+  bodyType: "none" | "json" | "form" | "text" | null;
+  queryParams: Record<string, string> | null;
   timeout: number;
   retryCount: number;
 }
@@ -33,74 +39,66 @@ export async function executeWithRetry(
           status: "RUNNING",
           retryNumber: attempt - 1,
         },
-        { status: "RETRY" }
+        { $set: { status: "RETRY" } }
       );
 
       await new Promise((resolve) => setTimeout(resolve, waitTime));
     }
 
-    const sanitizedBody = sanitizeBodyForStorage(config.body);
     const execution = await JobExecutionModel.create({
       jobId: new mongoose.Types.ObjectId(config.jobId),
       status: "RUNNING",
       requestUrl: sanitizeUrlForLog(config.url),
-      requestBody: sanitizedBody,
+      requestBody: sanitizeRequestBodyForStorage(config.body),
+      requestMethod: config.method,
+      requestHeaders: redactHeaders(config.headers),
+      queryParams: config.queryParams || null,
       retryNumber: attempt,
+      triggeredBy: "schedule",
     });
 
-    const result = await executeJobRequest({
+    const result = await executeHttpRequest({
       url: config.url,
       method: config.method,
       headers: config.headers,
       body: config.body,
+      bodyType: config.bodyType,
+      queryParams: config.queryParams,
       timeout: config.timeout,
     });
-
-    const status = result.httpStatus && result.httpStatus < 400
-      ? "SUCCESS"
-      : "FAILED";
 
     const sanitizedErrorMessage = result.errorMessage
       ? sanitizeForLog(result.errorMessage, 1000)
       : null;
 
     await JobExecutionModel.findByIdAndUpdate(execution._id, {
-      status,
-      httpStatus: result.httpStatus,
-      responseTime: result.responseTime,
-      errorMessage: sanitizedErrorMessage,
-      responseBody: result.responseBody,
-      completedAt: new Date(),
+      $set: {
+        status: result.status,
+        httpStatus: result.httpStatus,
+        responseTime: result.responseTime,
+        errorMessage: sanitizedErrorMessage,
+        responseBody: result.responseBody
+          ? result.responseBody.substring(0, 20000)
+          : null,
+        responseHeaders: result.responseHeaders,
+        responseSize: result.responseSize,
+        completedAt: new Date(),
+      },
     });
 
     lastResult = result;
 
-    if (status === "SUCCESS") {
+    if (result.status === "SUCCESS") {
       return result;
     }
 
     if (attempt < config.retryCount) {
       logger.warn(
         "retry",
-        "Job " + config.jobId + " failed (attempt " + (attempt + 1) + "), retrying..."
+        "Job " + config.jobId + " failed (" + result.status + ", attempt " + (attempt + 1) + "), retrying..."
       );
     }
   }
 
   return lastResult!;
-}
-
-function sanitizeBodyForStorage(body: unknown): unknown {
-  if (!body) return null;
-  if (typeof body === "string") {
-    return sanitizeForLog(body, 2048);
-  }
-  if (typeof body === "object") {
-    try {
-      return JSON.parse(sanitizeForLog(JSON.stringify(body), 2048));
-    } catch {
-      return null;
-    }
-  }
-  return body;
 }

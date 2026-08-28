@@ -1,5 +1,5 @@
 services:
-  - type: web
+  - type: worker
     name: cronjob-scheduler
     runtime: node
     plan: free
@@ -16,7 +16,27 @@ services:
         value: "30000"
       - key: SCHEDULER_MAX_CONCURRENT_JOBS
         value: "5"
+      - key: SCHEDULER_LOCK_EXPIRY_MS
+        value: "900000"
+      - key: SCHEDULER_MAX_CATCHUP_JOBS
+        value: "50"
+      - key: HEADER_ENCRYPTION_KEY
+        sync: false
       - key: RATELIMIT_SECRET
         sync: false
       - key: NEXTAUTH_SECRET
         sync: false
+      - key: NEXTAUTH_URL
+        sync: false
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
+      - key: CRON_MIN_INTERVAL_MS
+        value: "1000"
+      - key: CSRF_SECRET
+        sync: false
+      - key: TRUSTED_PROXY
+        value: "true"
+      - key: DEBUG
+        value: "false"
+      - key: SCHEDULER_HEALTH_ENABLED
+        value: "false"

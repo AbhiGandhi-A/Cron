@@ -102,35 +102,37 @@ The scheduler starts polling the database for due jobs and executing them. Keep 
 
 ## How the Scheduler Works
 
-The scheduler is a **standalone Node.js process** that:
+The scheduler is a **standalone Node.js process** that must run on an **always-on** host (`type: worker` on Render, or a VPS with PM2). It does **not** run on Vercel (Vercel serverless functions have no persistent process, so a polling scheduler there would sleep/throttle):
 
-1. **Polls the database** every 10 seconds (configurable) for active jobs where `next_run_at <= now`
-2. **Executes the HTTP request** (GET, POST, PUT, PATCH, DELETE) to the configured URL
-3. **Records the result** (status, HTTP code, response time, errors) in `jobexecutions`
-4. **Retries** on failure with exponential backoff (configurable retry count)
-5. **Calculates the next run time** using the cron expression
-6. **Prevents duplicate execution** via the `is_running` flag
-7. **Continues running** even if one job fails - errors are isolated per job
-8. **Updates a heartbeat** in the database every 30 seconds
+1. **Polls the database** every 10 seconds (configurable) for active jobs where `next_run_at <= now` **or** `next_run_at` is null (legacy/first-run jobs)
+2. **Claims the job atomically** via `lockedAt`/`lockedBy` (single `findOneAndUpdate`) — a second worker, the dashboard, and the manual "Run Now" button can never double-execute the same occurrence
+3. **Executes the HTTP request** (GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS) with full support for JSON/form/text bodies and query parameters
+4. **Records the result** (`jobexecutions`) with status, HTTP code, response time, request/response details
+5. **Validates outbound URLs** (SSRF protection) before every scheduler request AND notification request
+6. **Retries** on failure with exponential backoff up to `retryCount`, while **timeouts are recorded as `TIMEOUT`** (not silently retried forever)
+7. **Computes `nextRunAt` per-job with its `timezone`** (cron-parser with `tz`), then releases the lock — `nextRunAt` is the source of truth
+8. **Isolates failures** — one failing job never stops the loop; unexpected errors just skip that job
+9. **Recovers after crashes** — stale locks (older than `SCHEDULER_LOCK_EXPIRY_MS`) are reclaimed, stuck `RUNNING`/`RETRY` executions are marked `FAILED`, and missed jobs are caught up
+10. **Writes a heartbeat** every 30 seconds so the dashboard can show ONLINE/OFFLINE, and exits with code 1 on uncaught errors so the host restarts it
 
 ### Architecture
 
 ```
 scheduler/
-├── index.ts             # Entry point, handles signals and startup
-├── scheduler.ts         # Main loop, heartbeat, missed job recovery
-├── worker.ts            # Processes individual jobs
-├── executor.ts          # Makes the actual HTTP requests
-├── retry.ts             # Handles retry logic with exponential backoff
+├── index.ts             # Entry point: signals, crash-isolation exit, optional health
+├── scheduler.ts         # Main loop, atomic claims, heartbeat, catch-up recovery
+├── worker.ts            # Per-job processing, lock release, nextRunAt advance
+├── executor.ts          # Re-exports the shared execution engine
+├── retry.ts             # Retry loop with exponential backoff (shared core)
 ├── database.ts          # MongoDB connection
-├── models.ts            # CronJob model
+├── models.ts            # CronJob model (matches src/lib/models/CronJob.ts)
 ├── jobExecutionModel.ts # Execution history model
 ├── heartbeatModel.ts    # Scheduler heartbeat model
-├── logger.ts            # Structured logging
+├── logger.ts            # Structured, redacted logging
 └── tsconfig.json
 ```
 
-The database is the **source of truth** for scheduling. `next_run_at` determines when jobs run. The scheduler does not rely on `setInterval` for job timing - it polls the database state.
+The database is the **source of truth** for scheduling. `next_run_at` determines when jobs run. The scheduler does not rely on `setInterval` for job timing — it polls the database state. Execution logic lives in **`src/lib/execution-core.ts`** and is shared between the scheduler and the dashboard's "Run Now", so both behave identically.
 
 ## 7. Testing a Cron Job Locally
 
@@ -158,9 +160,14 @@ The database is the **source of truth** for scheduling. `next_run_at` determines
 Check the terminal where you ran `npm run scheduler` - you'll see log output like:
 
 ```
-[2026-08-26T12:00:00.000Z] [INFO] [scheduler] Processing 1 due job(s)
-[2026-08-26T12:00:00.001Z] [INFO] [executor] Executing GET https://httpbin.org/get
-[2026-08-26T12:00:01.500Z] [INFO] [executor] Completed: HTTP 200 in 1500ms
+[INFO] [scheduler] Connecting to MongoDB...
+[INFO] [scheduler] MongoDB connected
+[INFO] [scheduler] Worker started (id=..., host=..., pid=...)
+[INFO] [scheduler] Scheduler loop started
+[INFO] [worker] Claimed job <id>: Example Health Check
+[INFO] [worker] Executing job <id> -> GET https://httpbin.org/get
+[INFO] [worker] Job <id> completed: SUCCESS (HTTP 200 in 1500ms)
+[INFO] [worker] Next run for <id>: <iso timestamp>
 ```
 
 ## 8. Restart Recovery
@@ -168,9 +175,9 @@ Check the terminal where you ran `npm run scheduler` - you'll see log output lik
 If the scheduler stops (laptop shutdown, crash, restart), **no jobs are lost**:
 
 1. All schedule state is in the database (`next_run_at`)
-2. When the scheduler starts, it detects missed jobs (`next_run_at < now`)
-3. **Default behavior**: Run each missed job **once** (configurable)
-4. After running, the next `next_run_at` is calculated normally
+2. When the scheduler starts, it detects missed jobs (`next_run_at < now`) and stale locks/executions
+3. **Default behavior**: Run each missed job **once**, capped at `SCHEDULER_MAX_CATCHUP_JOBS` (default 50) to avoid an execution flood after a long outage; any further overdue jobs are rescheduled without running
+4. After running, the next `next_run_at` is calculated normally in the job's timezone
 
 ### Missed Job Policy
 
@@ -180,26 +187,23 @@ Configured in `scheduler/scheduler.ts`:
 - **Skip missed**: Update `next_run_at` to the next valid time without executing
 - **Run all missed**: Execute all missed intervals sequentially
 
-## 9. Moving the Scheduler to a VPS
+## 9. Deploying the Scheduler to Render (production)
 
-The scheduler is already designed for this. To move it:
+Host the Next.js app on Vercel, and the scheduler on Render as a **worker** service (free tier included):
 
-1. Clone the repo on your VPS
-2. Copy your `.env` file (same `MONGODB_URI`)
-3. Run `npm install`
-4. Run `npm run scheduler`
+1. Create a `render.yaml`-based Blueprint (included in this repo) or a manual "Background Worker":
+   - **Type**: Background Worker (NOT "Web Service") — web services sleep after ~15 min of no inbound traffic, which silently kills a polling scheduler
+   - **Build command**: `npm install` (must keep dev dependencies so `tsx` is available)
+   - **Start command**: `npm run scheduler`
+   - **Runtime**: Node
+2. Set the same env vars on both Vercel and Render (Render: `MONGODB_URI`, `NEXTAUTH_URL`, `NEXT_PUBLIC_APP_URL`, `NEXTAUTH_SECRET`, `RATELIMIT_SECRET`, `CSRF_SECRET`, `HEADER_ENCRYPTION_KEY`, `SCHEDULER_API_TOKEN`). Keys used to encrypt job headers must match across hosts.
+3. Deploy. The Render worker connects to the **same MongoDB** as Vercel — no network link between them is needed.
+4. Expected logs on Render: `[INFO] [scheduler] Connecting to MongoDB...`, `Worker started (id=..., host=..., pid=...)`, `Scheduler loop started`, then per-cycle `Found N due job(s)` and `Job <id> completed: SUCCESS (HTTP 200 ...)`.
+5. Verify liveness on the dashboard ("Scheduler" status must show ONLINE) or via `GET /api/scheduler`.
 
-The scheduler connects to the **same MongoDB database**, so it picks up all jobs immediately. The Next.js app and scheduler communicate through the database, not directly.
+> Workers don't need a health endpoint (no inbound traffic). The MongoDB heartbeat is the liveness signal. If you want an external uptime probe, set `SCHEDULER_HEALTH_ENABLED=true` (listens on `PORT`, default 3000 — change it to avoid conflicts).
 
-### Recommended setup
-
-```
-VPS (always on):
-├── Next.js app (port 3000, behind nginx)
-└── Scheduler process (npm run scheduler)
-```
-
-### Process management with PM2
+### Process management with PM2 (VPS alternative)
 
 ```bash
 npm install -g pm2
@@ -259,6 +263,8 @@ cron-job-saas/
 │   └── lib/
 │       ├── auth.ts
 │       ├── mongodb.ts      # MongoDB connection
+│       ├── execution-core.ts # Shared HTTP execution engine (Vercel + scheduler)
+│       ├── cron.ts         # Timezone-aware computeNextRunAt / isValidTimeZone
 │       ├── models/         # Mongoose models
 │       │   ├── User.ts
 │       │   ├── CronJob.ts

@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth";
 import connectDb from "@/lib/mongodb";
 import { CronJob, User } from "@/lib/models";
 import { createJobSchema } from "@/lib/validation";
-import cronParser from "cron-parser";
+import { computeNextRunAt } from "@/lib/cron";
 import { enforceRateLimit, getAuthenticatedIdentifier, getCronMinInterval, logError, readJsonBody, sanitizeObjectForStorage, validateOutboundUrl, validateCronExpression, validatePaginationParams } from "@/lib/security";
 
 async function getUserId(): Promise<string | null> {
@@ -99,8 +99,7 @@ export async function POST(req: Request) {
 
     let nextRunAt: Date | null = null;
     try {
-      const interval = cronParser.parseExpression(data.schedule);
-      nextRunAt = interval.next().toDate();
+      nextRunAt = computeNextRunAt(data.schedule, data.timezone ?? "UTC");
     } catch {
       return NextResponse.json(
         { error: "Invalid cron expression" },
@@ -118,6 +117,7 @@ export async function POST(req: Request) {
       bodyType: data.bodyType,
       queryParams: data.queryParams || null,
       schedule: data.schedule,
+      timezone: data.timezone ?? "UTC",
       isActive: data.isActive,
       timeout: data.timeout,
       retryCount: data.retryCount,

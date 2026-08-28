@@ -92,7 +92,7 @@ export async function POST(req: Request) {
     const fetchOptions: RequestInit = {
       method: method.toUpperCase(),
       headers: fetchHeaders,
-      redirect: "manual",
+      redirect: "follow",
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     };
 
@@ -117,27 +117,23 @@ export async function POST(req: Request) {
     try {
       const response = await fetch(validatedUrl.toString(), fetchOptions);
 
-      if ([301, 302, 303, 307, 308].includes(response.status)) {
-        const location = response.headers.get("location");
-        if (location) {
-          try {
-            const redirectUrl = new URL(location, validatedUrl.toString());
-            await validateOutboundUrl(redirectUrl.toString());
-          } catch {
-            return NextResponse.json({
-              status: "FAILED",
-              httpStatus: response.status,
-              responseTime: Date.now() - startTime,
-              errorMessage: "Redirect to blocked destination",
-              responseBody: null,
-              responseHeaders: null,
-              responseSize: 0,
-              requestUrl: sanitizeUrlForLog(url),
-              requestMethod: method.toUpperCase(),
-              requestHeaders: redactHeaders(fetchHeaders),
-              sentBody: hasBody && bodyType !== "none" ? requestBody : null,
-            });
-          }
+      if (response.url && response.url !== validatedUrl.toString()) {
+        try {
+          await validateOutboundUrl(response.url);
+        } catch {
+          return NextResponse.json({
+            status: "FAILED",
+            httpStatus: response.status,
+            responseTime: Date.now() - startTime,
+            errorMessage: "Redirect to blocked destination",
+            responseBody: null,
+            responseHeaders: null,
+            responseSize: 0,
+            requestUrl: sanitizeUrlForLog(url),
+            requestMethod: method.toUpperCase(),
+            requestHeaders: redactHeaders(fetchHeaders),
+            sentBody: hasBody && bodyType !== "none" ? requestBody : null,
+          });
         }
       }
 
@@ -162,6 +158,7 @@ export async function POST(req: Request) {
         responseHeaders: redactHeaders(respHeaders),
         responseSize: rawBody.length,
         requestUrl: sanitizeUrlForLog(url),
+        fullRequestUrl: validatedUrl.toString(),
         requestMethod: method.toUpperCase(),
         requestHeaders: redactHeaders(fetchHeaders),
         sentBody: hasBody && bodyType !== "none" ? requestBody : null,

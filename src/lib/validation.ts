@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isValidTimeZone } from "./cron";
 
 const allowedMethods = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const;
 
@@ -26,6 +27,7 @@ export const createJobSchema = z.object({
   bodyType: z.enum(["none", "json", "form", "text"]).default("none"),
   queryParams: z.record(z.string().max(255), z.string().max(2048)).optional().nullable(),
   schedule: safeString(255, "Schedule"),
+  timezone: z.string().trim().max(100).default("UTC").refine(isValidTimeZone, "Invalid timezone").optional(),
   isActive: z.boolean().default(true),
   timeout: z.number().int().min(1000).max(300000).default(30000),
   retryCount: z.number().int().min(0).max(10).default(3),

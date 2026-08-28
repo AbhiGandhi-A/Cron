@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "next lint",
     "db:seed": "npx tsx seed.ts",
-    "test": "node --import tsx --test tests/security.test.ts",
+    "test": "node --import tsx --test tests/*.test.ts",
     "test:security": "node --import tsx --test tests/security.test.ts"
   },
   "dependencies": {
@@ -33,6 +33,7 @@
     "@types/react-dom": "^19.1.2",
     "eslint": "^9.25.0",
     "eslint-config-next": "^15.3.1",
+    "mongodb-memory-server": "^11.2.0",
     "tailwindcss": "^4.1.5",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3"

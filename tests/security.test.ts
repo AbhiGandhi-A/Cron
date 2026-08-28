@@ -780,3 +780,68 @@ test("URL validation: error messages are generic", async () => {
     assert.ok(!e.message.includes("node_modules"), "Error should not include node_modules");
   }
 });
+
+// ============================================================
+// REGRESSION: DNS resolution uses resolve4/resolve6 (not lookup)
+// ============================================================
+test("SSRF: DNS resolution uses resolve4/resolve6 to avoid OS resolver false positives", async () => {
+  const dns = await import("dns/promises");
+  const hostname = "example.com";
+
+  const v4 = await dns.resolve4(hostname);
+  const v6 = await dns.resolve6(hostname).catch(() => []);
+
+  assert.ok(v4.length > 0, "example.com should have A records");
+
+  for (const ip of v4) {
+    assert.equal(isBlockedIPv4(ip), false, `Public IP ${ip} should not be blocked`);
+  }
+  for (const ip of v6) {
+    assert.equal(isBlockedIPv6(ip), false, `Public IPv6 ${ip} should not be blocked`);
+  }
+
+  await assert.doesNotReject(
+    () => validateOutboundUrl("https://example.com"),
+    "Public URL should pass validation via DNS resolution"
+  );
+});
+
+test("SSRF: legitimate public API URLs pass validation", async () => {
+  const publicUrls = [
+    "https://httpbin.org/get",
+    "https://jsonplaceholder.typicode.com/posts/1",
+    "https://api.github.com",
+  ];
+
+  for (const url of publicUrls) {
+    await assert.doesNotReject(
+      () => validateOutboundUrl(url),
+      `Public URL "${url}" should pass validation`
+    );
+  }
+});
+
+test("SSRF: redirect to private IP is blocked", async () => {
+  const redirectTargets = [
+    "http://127.0.0.1:8080/callback",
+    "http://10.0.0.1/callback",
+    "http://192.168.1.1/callback",
+    "http://[::1]/callback",
+    "http://169.254.169.254/callback",
+  ];
+
+  for (const url of redirectTargets) {
+    await assert.rejects(
+      () => validateOutboundUrl(url),
+      /Blocked|Invalid|Loopback|Destination|resolved/,
+      `Redirect to "${url}" should be blocked`
+    );
+  }
+});
+
+test("SSRF: redirect to public URL is allowed", async () => {
+  await assert.doesNotReject(
+    () => validateOutboundUrl("https://example.com/callback"),
+    "Redirect to public URL should be allowed"
+  );
+});

@@ -301,13 +301,29 @@ export async function validateOutboundUrl(rawUrl: string): Promise<URL> {
     }
   }
 
+  const appOrigin = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL;
+  if (appOrigin) {
+    try {
+      const originUrl = new URL(appOrigin);
+      if (hostname === originUrl.hostname.toLowerCase()) {
+        return parsed;
+      }
+    } catch {}
+  }
+
   try {
-    const addresses = await dns.lookup(hostname, { all: true });
-    if (!addresses.length) {
+    const v4Addresses = await dns.resolve4(hostname).catch(() => []);
+    const v6Addresses = await dns.resolve6(hostname).catch(() => []);
+    const allAddresses = [
+      ...v4Addresses.map((address) => ({ address, family: 4 as const })),
+      ...v6Addresses.map((address) => ({ address, family: 6 as const })),
+    ];
+
+    if (!allAddresses.length) {
       throw new Error("Host could not be resolved");
     }
 
-    for (const entry of addresses) {
+    for (const entry of allAddresses) {
       if (isBlockedAddress(entry.address)) {
         throw new Error("Blocked internal or private destination");
       }

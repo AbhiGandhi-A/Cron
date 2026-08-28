@@ -21,6 +21,7 @@ export interface ICronJob extends Document {
   bodyType: BodyType;
   queryParams: Record<string, string> | null;
   schedule: string;
+  timezone: string;
   isActive: boolean;
   timeout: number;
   retryCount: number;
@@ -29,6 +30,8 @@ export interface ICronJob extends Document {
   nextRunAt: Date | null;
   consecutiveFailures: number;
   notifications: INotificationConfig;
+  lockedAt: Date | null;
+  lockedBy: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -54,6 +57,7 @@ const CronJobSchema = new Schema<ICronJob>(
     bodyType: { type: String, enum: ["none", "json", "form", "text"], default: "none" },
     queryParams: { type: Schema.Types.Mixed, default: null },
     schedule: { type: String, required: true },
+    timezone: { type: String, default: "UTC" },
     isActive: { type: Boolean, default: true },
     timeout: { type: Number, default: 30000, min: 1000, max: 300000 },
     retryCount: { type: Number, default: 3, min: 0, max: 10 },
@@ -62,11 +66,14 @@ const CronJobSchema = new Schema<ICronJob>(
     nextRunAt: { type: Date, default: null, index: true },
     consecutiveFailures: { type: Number, default: 0 },
     notifications: { type: NotificationSchema, default: () => ({}) },
+    lockedAt: { type: Date, default: null },
+    lockedBy: { type: String, default: null },
   },
   { timestamps: true }
 );
 
 CronJobSchema.index({ isActive: 1, nextRunAt: 1 });
+CronJobSchema.index({ isRunning: 1, lockedAt: 1 });
 
 export const CronJob: Model<ICronJob> =
   mongoose.models.CronJob || mongoose.model<ICronJob>("CronJob", CronJobSchema);

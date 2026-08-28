@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth";
 import connectDb from "@/lib/mongodb";
 import { CronJob, JobExecution } from "@/lib/models";
 import { updateJobSchema } from "@/lib/validation";
-import cronParser from "cron-parser";
+import { computeNextRunAt } from "@/lib/cron";
 import { enforceRateLimit, getCronMinInterval, getAuthenticatedIdentifier, logError, readJsonBody, sanitizeObjectForStorage, validateCronExpression, validateObjectId, validateOutboundUrl } from "@/lib/security";
 
 async function getUserId(): Promise<string | null> {
@@ -110,10 +110,11 @@ export async function PUT(
     }
     let nextRunAt = existing.nextRunAt;
 
+    const effectiveTimezone = data.timezone ?? existing.timezone ?? "UTC";
+
     if (data.schedule && data.schedule !== existing.schedule) {
       try {
-        const interval = cronParser.parseExpression(data.schedule);
-        nextRunAt = interval.next().toDate();
+        nextRunAt = computeNextRunAt(data.schedule, effectiveTimezone);
       } catch {
         return NextResponse.json(
           { error: "Invalid cron expression" },
@@ -130,6 +131,10 @@ export async function PUT(
     if (data.body !== undefined) updateData.body = sanitizeObjectForStorage(data.body || null);
     if (data.schedule !== undefined) {
       updateData.schedule = data.schedule;
+      updateData.nextRunAt = nextRunAt;
+    }
+    if (data.timezone !== undefined) {
+      updateData.timezone = data.timezone;
       updateData.nextRunAt = nextRunAt;
     }
     if (data.isActive !== undefined) updateData.isActive = data.isActive;

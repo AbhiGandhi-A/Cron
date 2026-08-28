@@ -3,8 +3,9 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import connectDb from "@/lib/mongodb";
 import { CronJob, JobExecution, User } from "@/lib/models";
-import { enforceRateLimit, getAuthenticatedIdentifier, logError, redactHeaders, sanitizeObjectForStorage, sanitizeUrlForLog, validateObjectId, validateOutboundUrl } from "@/lib/security";
-import cronParser from "cron-parser";
+import { enforceRateLimit, getAuthenticatedIdentifier, logError, redactHeaders, sanitizeUrlForLog, validateObjectId, validateOutboundUrl } from "@/lib/security";
+import { executeHttpRequest, sanitizeRequestBodyForStorage, ExecutionResult } from "@/lib/execution-core";
+import { computeNextRunAt } from "@/lib/cron";
 
 async function getUserId(): Promise<string | null> {
   const session = await getServerSession(authOptions);
@@ -12,178 +13,65 @@ async function getUserId(): Promise<string | null> {
   return (session.user as { id: string }).id;
 }
 
-const STALE_RUNNING_THRESHOLD_MS = 5 * 60 * 1000;
-const MAX_RESPONSE_BODY_BYTES = 50_000;
-const MAX_ERROR_MESSAGE_BYTES = 1000;
-
-async function executeJobRequest(config: {
-  url: string;
-  method: string;
-  headers: unknown;
-  body: unknown;
-  timeout: number;
-  queryParams: Record<string, string> | null;
-}): Promise<{
-  httpStatus: number | null;
-  responseTime: number;
-  errorMessage: string | null;
-  responseBody: string | null;
-  responseHeaders: Record<string, string> | null;
-  responseSize: number;
-}> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), config.timeout);
-
-  const headers: Record<string, string> = {};
-  if (config.headers && typeof config.headers === "object") {
-    Object.entries(config.headers as Record<string, string>).forEach(
-      ([key, value]) => {
-        headers[key] = String(value);
-      }
-    );
-    if (!headers["Content-Type"] && config.method !== "GET") {
-      headers["Content-Type"] = "application/json";
-    }
-  }
-
-  let fullUrl = config.url;
-  if (config.queryParams && Object.keys(config.queryParams).length > 0) {
-    const urlObj = new URL(config.url);
-    for (const [key, value] of Object.entries(config.queryParams)) {
-      urlObj.searchParams.set(key, value);
-    }
-    fullUrl = urlObj.toString();
-  }
-
-  const startTime = Date.now();
-  try {
-    const fetchOptions: RequestInit = {
-      method: config.method,
-      headers,
-      signal: controller.signal,
-      redirect: "manual",
-    };
-
-    if (config.method !== "GET" && config.body) {
-      fetchOptions.body = JSON.stringify(config.body);
-    }
-
-    const response = await fetch(fullUrl, fetchOptions);
-    if ([301, 302, 303, 307, 308].includes(response.status)) {
-      const location = response.headers.get("location");
-      if (location) {
-        try {
-          const redirectUrl = new URL(location, fullUrl);
-          await validateOutboundUrl(redirectUrl.toString());
-        } catch {
-          clearTimeout(timeoutId);
-          return {
-            httpStatus: response.status,
-            responseTime: Date.now() - startTime,
-            errorMessage: "Redirect to blocked destination",
-            responseBody: null,
-            responseHeaders: null,
-            responseSize: 0,
-          };
-        }
-      }
-    }
-
-    const responseTime = Date.now() - startTime;
-    const rawBody = await response.text();
-    const responseBody = rawBody.length > MAX_RESPONSE_BODY_BYTES
-      ? rawBody.substring(0, MAX_RESPONSE_BODY_BYTES)
-      : rawBody;
-
-    const respHeaders: Record<string, string> = {};
-    response.headers.forEach((value, key) => {
-      respHeaders[key] = value;
-    });
-
-    clearTimeout(timeoutId);
-
-    return {
-      httpStatus: response.status,
-      responseTime,
-      errorMessage: null,
-      responseBody,
-      responseHeaders: respHeaders,
-      responseSize: rawBody.length,
-    };
-  } catch (error: unknown) {
-    const responseTime = Date.now() - startTime;
-    clearTimeout(timeoutId);
-
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-
-    return {
-      httpStatus: null,
-      responseTime,
-      errorMessage: errorMessage.substring(0, MAX_ERROR_MESSAGE_BYTES),
-      responseBody: null,
-      responseHeaders: null,
-      responseSize: 0,
-    };
-  }
-}
+const LOCK_EXPIRY_MS = 5 * 60 * 1000;
+const STORED_RESPONSE_BODY_BYTES = 20_000;
 
 async function executeWithRetry(
   job: {
     _id: string;
     url: string;
     method: string;
-    headers: unknown;
+    headers: Record<string, string> | null;
     body: unknown;
+    bodyType: "none" | "json" | "form" | "text" | null;
+    queryParams: Record<string, string> | null;
     timeout: number;
     retryCount: number;
-    queryParams: Record<string, string> | null;
+    timezone: string;
+    schedule: string;
   },
   retryNumber: number = 0
-): Promise<{
-  httpStatus: number | null;
-  responseTime: number;
-  errorMessage: string | null;
-  responseBody: string | null;
-  responseHeaders: Record<string, string> | null;
-  responseSize: number;
-}> {
+): Promise<ExecutionResult> {
   await connectDb();
 
   const execution = await JobExecution.create({
     jobId: job._id,
     status: "RUNNING",
     requestUrl: sanitizeUrlForLog(job.url),
-    requestBody: sanitizeObjectForStorage(job.body),
+    requestBody: sanitizeRequestBodyForStorage(job.body),
     requestMethod: job.method,
-    requestHeaders: redactHeaders(job.headers as Record<string, string> | null),
+    requestHeaders: redactHeaders(job.headers),
     queryParams: job.queryParams || null,
     retryNumber,
+    triggeredBy: "manual",
   });
 
-  const result = await executeJobRequest({
+  const result = await executeHttpRequest({
     url: job.url,
     method: job.method,
     headers: job.headers,
     body: job.body,
-    timeout: job.timeout,
+    bodyType: job.bodyType,
     queryParams: job.queryParams,
+    timeout: job.timeout,
   });
 
-  const status = result.httpStatus && result.httpStatus < 400 ? "SUCCESS" : "FAILED";
+  const status = result.status;
 
   await JobExecution.findByIdAndUpdate(execution._id, {
     status,
     httpStatus: result.httpStatus,
     responseTime: result.responseTime,
     errorMessage: result.errorMessage,
-    responseBody: result.responseBody ? result.responseBody.substring(0, 20000) : null,
-    responseHeaders: redactHeaders(result.responseHeaders),
+    responseBody: result.responseBody
+      ? result.responseBody.substring(0, STORED_RESPONSE_BODY_BYTES)
+      : null,
+    responseHeaders: result.responseHeaders,
     responseSize: result.responseSize,
     completedAt: new Date(),
   });
 
-  if (status === "FAILED" && retryNumber < job.retryCount) {
+  if (result.status !== "SUCCESS" && retryNumber < job.retryCount) {
     const waitTime = Math.min(1000 * Math.pow(2, retryNumber), 30000);
 
     await JobExecution.updateMany(
@@ -218,17 +106,24 @@ export async function POST(
       return NextResponse.json({ error: "Invalid job ID" }, { status: 400 });
     }
 
-    const staleThreshold = new Date(Date.now() - STALE_RUNNING_THRESHOLD_MS);
+    // Atomic claim — same lock semantics the scheduler uses. If the job is
+    // locked by a running scheduled execution, this returns null and the
+    // manual run is rejected instead of double-executing.
+    const staleThreshold = new Date(Date.now() - LOCK_EXPIRY_MS);
     const lock = await CronJob.findOneAndUpdate(
       {
         _id: id,
         userId,
-        $or: [
-          { isRunning: false },
-          { isRunning: true, lastRunAt: { $lt: staleThreshold } },
-        ],
+        $or: [{ lockedAt: null }, { lockedAt: { $lt: staleThreshold } }],
       },
-      { $set: { isRunning: true, lastRunAt: new Date() } },
+      {
+        $set: {
+          isRunning: true,
+          lockedAt: new Date(),
+          lockedBy: "manual",
+          lastRunAt: new Date(),
+        },
+      },
       { new: true }
     ).lean();
 
@@ -254,7 +149,11 @@ export async function POST(
       status: { $in: ["SUCCESS", "FAILED"] },
     });
     if (currentMonthCount >= maxExecutions) {
-      await CronJob.findByIdAndUpdate(id, { isRunning: false });
+      await CronJob.findByIdAndUpdate(id, {
+        isRunning: false,
+        lockedAt: null,
+        lockedBy: null,
+      });
       return NextResponse.json(
         { error: "Monthly execution limit reached", current: currentMonthCount, max: maxExecutions },
         { status: 429 }
@@ -266,24 +165,28 @@ export async function POST(
       url: lock.url,
       method: lock.method,
       headers: lock.headers,
-      body: sanitizeObjectForStorage(lock.body),
+      body: lock.body,
+      bodyType: lock.bodyType,
+      queryParams: lock.queryParams || null,
       timeout: lock.timeout,
       retryCount: lock.retryCount,
-      queryParams: lock.queryParams || null,
+      timezone: lock.timezone || "UTC",
+      schedule: lock.schedule,
     });
 
-    const finalStatus = result.httpStatus && result.httpStatus < 400 ? "SUCCESS" : "FAILED";
+    const finalStatus = result.status;
 
     let nextRunAt: Date | null = null;
     try {
-      const interval = cronParser.parseExpression(lock.schedule);
-      nextRunAt = interval.next().toDate();
+      nextRunAt = computeNextRunAt(lock.schedule, lock.timezone || "UTC");
     } catch {
       nextRunAt = null;
     }
 
     await CronJob.findByIdAndUpdate(id, {
       isRunning: false,
+      lockedAt: null,
+      lockedBy: null,
       lastRunAt: new Date(),
       nextRunAt,
     });
@@ -299,7 +202,7 @@ export async function POST(
         responseSize: result.responseSize,
         requestUrl: lock.url,
         requestMethod: lock.method,
-        requestHeaders: redactHeaders(lock.headers as Record<string, string> | null),
+        requestHeaders: redactHeaders(lock.headers),
         queryParams: lock.queryParams || null,
         requestBody: lock.body,
         startedAt: new Date(Date.now() - result.responseTime).toISOString(),
@@ -316,7 +219,11 @@ export async function POST(
       const { id } = await params;
       if (validateObjectId(id)) {
         await connectDb();
-        await CronJob.findByIdAndUpdate(id, { isRunning: false });
+        await CronJob.findByIdAndUpdate(id, {
+          isRunning: false,
+          lockedAt: null,
+          lockedBy: null,
+        });
       }
     } catch {
       // Best effort reset
