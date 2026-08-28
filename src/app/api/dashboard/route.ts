@@ -85,6 +85,7 @@ export async function GET(req: Request) {
 
     const user = await User.findById(userId).lean();
     const maxExecutions = user?.maxExecutions ?? 1000;
+    const maxJobs = user?.maxJobs ?? 10;
     const monthlyRemaining = Math.max(0, maxExecutions - monthlyExecutions);
 
     return NextResponse.json({
@@ -101,6 +102,7 @@ export async function GET(req: Request) {
       monthlyExecutions,
       monthlyRemaining,
       maxExecutions,
+      maxJobs,
     });
   } catch (error) {
     logError("dashboard", "Failed to load dashboard", error);
