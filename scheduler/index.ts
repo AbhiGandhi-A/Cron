@@ -1,7 +1,7 @@
 import "dotenv/config";
 
 import { startScheduler, stopScheduler } from "./scheduler";
-import { healthServerEnabled, startHealthServer, markSchedulerRunning } from "./health";
+import { healthServerEnabled, startHealthServer, stopHealthServer, markSchedulerRunning } from "./health";
 import { logger } from "./logger";
 
 let isShuttingDown = false;
@@ -12,7 +12,11 @@ async function shutdown(code: number): Promise<void> {
 
   logger.info("index", "Shutting down...");
   try {
+    // Stop the scheduler loop first (stop polling, drain active executions,
+    // heartbeat OFFLINE, close Mongo), then stop accepting new HTTP requests
+    // to the health/wake server before the process exits.
     await stopScheduler();
+    stopHealthServer();
   } catch (error) {
     logger.error("index", "Error during shutdown", error);
   }
@@ -60,7 +64,7 @@ async function main(): Promise<void> {
 
   // Render Web Service ingress: bind a minimal HTTP server to 0.0.0.0:$PORT.
   // It must be up quickly so Render marks the instance healthy, and it doubles
-  // as the way EasyCron wakes/keeps the free Web Service alive (~10 min).
+  // as the way cron-job.org wakes/keeps the free Web Service alive (~6 min).
   // Automatically ON under Render (RENDER=true); also forceable with
   // SCHEDULER_HEALTH_ENABLED=true. Routes: GET /health, GET /wake.
   if (healthServerEnabled()) {

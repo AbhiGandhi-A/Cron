@@ -190,16 +190,15 @@ Configured in `scheduler/scheduler.ts`:
 
 ## 9. Deploying the Scheduler to Render as a Web Service (production)
 
-Host the Next.js app on Vercel, and the scheduler on Render as a **free-tier Web Service** that is woken/kept alive by an **EasyCron** HTTP request every ~10 minutes. This is intentional (not a paid Background Worker) — Render free Web Services sleep after ~15 min of no inbound traffic, and EasyCron keeps the scheduler woken:
+Host the Next.js app on Vercel, and the scheduler on Render as a **free-tier Web Service** that is woken/kept alive by an external uptime cron (**cron-job.org**) calling Render's `/health` every ~6 minutes. This is intentional (not a paid Background Worker) — Render free Web Services sleep after ~15 min of no inbound traffic, and cron-job.org keeps the scheduler woken:
 
 ```
 USER CREATES JOB → VERCEL (saves to MongoDB) → MONGODB ATLAS →
-EASYCRON (GET /api/wake-render every ~10 min on VERCEL) → VERCEL wake relay →
-GET https://<YOUR-RENDER-URL>/health → RENDER SCHEDULER →
+cron-job.org (GET https://<YOUR-RENDER-URL>/health every ~6 min) → RENDER SCHEDULER →
 MONGODB POLL → JOB EXECUTES → EXECUTION SAVED → nextRunAt ADVANCES → NEXT EXECUTION
 ```
 
-Why the relay? EasyCron's free tier blocks `*.onrender.com` targets. So EasyCron instead calls the Vercel endpoint **`GET /api/wake-render`**, which performs a fixed, token-protected server-to-server `fetch` to the Render `/health` route. EasyCron and Vercel only generate inbound traffic — they never execute jobs. The Render scheduler decides what is due from MongoDB.
+cron-job.org and Vercel only generate/gate inbound traffic — **they never execute jobs.** The Render scheduler decides what is due from MongoDB. A token-protected Vercel wake relay (`GET /api/wake-render`) also exists as a fallback if a direct cron-job.org → Render call is ever blocked, but the direct path is primary.
 
 1. Create a `render.yaml`-based Blueprint (included in this repo) or a manual **Web Service**:
    - **Type**: Web Service (free tier) — NOT a paid Background Worker
@@ -208,11 +207,11 @@ Why the relay? EasyCron's free tier blocks `*.onrender.com` targets. So EasyCron
    - **Runtime**: Node
 2. Set the same env vars on both Vercel and Render (Render: `MONGODB_URI`, `NEXTAUTH_URL`, `NEXT_PUBLIC_APP_URL`, `NEXTAUTH_SECRET`, `RATELIMIT_SECRET`, `CSRF_SECRET`, `HEADER_ENCRYPTION_KEY`, `SCHEDULER_API_TOKEN`). Keys used to encrypt job headers must match across hosts (`MONGODB_URI` and `HEADER_ENCRYPTION_KEY` must MATCH between Vercel and Render).
 3. Deploy. The Render Web Service connects to the **same MongoDB** as Vercel — no network link between them is needed.
-4. Create an **EasyCron** job (or any external uptime cron) calling **`https://<YOUR-VERCEL-DOMAIN>/api/wake-render`** every **~10 minutes** (comfortably under the ~15-min free-tier idle timeout). If EasyCron supports custom headers it should send `Authorization: Bearer <RENDER_WAKE_TOKEN>`; otherwise append `?token=<RENDER_WAKE_TOKEN>`. Set `RENDER_WAKE_TOKEN` (secret) and `RENDER_WAKE_URL=https://<YOUR-RENDER-DOMAIN>/health` on Vercel. The relay only fetches the fixed Render `/health` URL (never an arbitrary target), returns quickly even when Render is cold-starting, and **never executes cron jobs** — it only generates the inbound traffic that wakes/keeps the process alive.
+4. Configure **cron-job.org** to call `https://<YOUR-RENDER-DOMAIN>/health` every **~6 minutes** (comfortably under the ~15-min free-tier idle timeout). `/health` returns quickly (no auth, no Mongo work), never executes jobs, and never starts a second scheduler — it only generates the inbound traffic that wakes/keeps the process alive; the countdown of cron-job.org execution is separate from CronJob.io job execution.
 5. Expected logs on Render: `[INFO] [scheduler] Connecting to MongoDB...`, `Worker started (id=..., host=..., pid=...)`, `Health/wake server listening on 0.0.0.0:<port>`, `Scheduler loop started`, then per-cycle `Found N due job(s)` and `Job <id> completed: SUCCESS (HTTP 200 ...)`.
 6. Verify liveness on the dashboard ("Scheduler" status must show ONLINE) or via `GET /api/scheduler`.
 
-> Accurate terminology: a Render **free** Web Service is **kept active/woken by an external EasyCron HTTP request approximately every 10 minutes** — it is not "always-on". If the instance genuinely sleeps between wake-ups, scheduled execution cannot be guaranteed during that sleeping window; on wake, the scheduler detects overdue `nextRunAt` jobs and applies the catch-up policy (item 8), so it never floods duplicates.
+> Accurate terminology: a Render **free** Web Service is **kept active/woken by an external cron-job.org HTTP request approximately every 6 minutes** — it is not "always-on". If the instance genuinely sleeps between wake-ups, scheduled execution cannot be guaranteed during that sleeping window; on wake, the scheduler detects overdue `nextRunAt` jobs and applies the catch-up policy (item 8), so it never floods duplicates. Watch Render's monthly free instance hours (`free` plan: ~750 hrs/mo across web services) — a 24/7 woken service consumes them; the account may be suspended if the included hours are exhausted.
 
 ### Process management with PM2 (VPS alternative)
 

@@ -2,13 +2,13 @@ services:
   # Free-tier WEB SERVICE hosting the scheduler. This lets Render route inbound
   # HTTPS traffic to the process (required so the service can be woken), and the
   # same long-running Node process both (1) runs the MongoDB scheduler loop and
-  # (2) serves minimal /health + /wake HTTP so an EXTERNAL scheduler (EasyCron)
-  # can send a keep-alive/wake request ~every 10 minutes.
+  # (2) serves minimal /health + /wake HTTP so cron-job.org can send a
+  # keep-alive/wake request every ~6 minutes.
   #
-  # The EasyCron request ONLY wakes/keeps the service alive. It never executes
-  # jobs — the scheduler itself polls MongoDB and decides what is due (incl.
-  # missed jobs after a sleep period). Sleep/wake + catch-up cap logic is in
-  # scheduler/scheduler.ts.
+  # The cron-job.org request ONLY wakes/keeps the service alive. It never
+  # executes jobs — the scheduler itself polls MongoDB and decides what is due
+  # (incl. missed jobs after a sleep period). Sleep/wake + catch-up cap logic
+  # is in scheduler/scheduler.ts. This is NOT an always-on worker.
   - type: web
     name: cronjob-scheduler
     runtime: node
