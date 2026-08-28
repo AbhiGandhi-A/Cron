@@ -4,6 +4,7 @@ import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { useOnboarding } from "./onboarding/OnboardingTour";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: "dashboard" },
@@ -55,6 +56,7 @@ function NavIcon({ icon }: { icon: string }) {
 export default function Sidebar() {
   const pathname = usePathname();
   const { data: session } = useSession();
+  const { openTour } = useOnboarding();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
@@ -130,6 +132,28 @@ export default function Sidebar() {
 
         {/* User section */}
         <div className="p-4 border-t border-white/10">
+          <button
+            onClick={() => {
+              openTour();
+              setMobileOpen(false);
+            }}
+            className="w-full flex items-center gap-3 px-3 py-2.5 mb-4 rounded-lg text-sm font-medium text-gray-400 hover:bg-white/5 hover:text-white transition-all duration-150"
+          >
+            <svg
+              className="w-5 h-5 shrink-0"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z"
+              />
+            </svg>
+            How to use CronJob.io
+          </button>
           <div className="flex items-center gap-3 mb-3">
             <div className="w-9 h-9 bg-brand-600/20 border border-brand-500/30 rounded-full flex items-center justify-center text-sm font-bold text-brand-400">
               {session?.user?.name?.charAt(0)?.toUpperCase() || session?.user?.email?.charAt(0)?.toUpperCase() || "?"}

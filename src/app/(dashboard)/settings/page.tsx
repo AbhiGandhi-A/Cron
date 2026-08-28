@@ -85,22 +85,6 @@ export default function SettingsPage() {
               </p>
             </div>
           </div>
-
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-            <h2 className="text-base font-bold text-gray-900 mb-5">Scheduler</h2>
-            <p className="text-sm text-gray-500 mb-4">
-              The scheduler runs as a separate Node.js process. It polls the MongoDB database for due jobs
-              and executes them. Restart the scheduler at any time - it will recover automatically from
-              the database state.
-            </p>
-            <div className="flex items-center gap-2 text-sm text-gray-500">
-              <span className="w-2 h-2 bg-gray-300 rounded-full" />
-              Run command:{" "}
-              <code className="font-mono bg-gray-100 text-gray-700 px-2.5 py-1 rounded-lg text-xs font-medium">
-                npm run scheduler
-              </code>
-            </div>
-          </div>
         </div>
       </div>
     </DashboardLayout>

@@ -4,6 +4,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import Sidebar from "./Sidebar";
+import { OnboardingProvider } from "./onboarding/OnboardingTour";
 
 export default function DashboardLayout({
   children,
@@ -33,11 +34,13 @@ export default function DashboardLayout({
   if (!session) return null;
 
   return (
-    <div className="flex min-h-screen bg-gray-50/80">
-      <Sidebar />
-      <main className="flex-1 min-w-0 overflow-auto">
-        <div className="p-4 sm:p-6 lg:p-8 max-w-[1400px]">{children}</div>
-      </main>
-    </div>
+    <OnboardingProvider>
+      <div className="flex min-h-screen bg-gray-50/80">
+        <Sidebar />
+        <main className="flex-1 min-w-0 overflow-auto">
+          <div className="p-4 sm:p-6 lg:p-8 max-w-[1400px]">{children}</div>
+        </main>
+      </div>
+    </OnboardingProvider>
   );
 }
