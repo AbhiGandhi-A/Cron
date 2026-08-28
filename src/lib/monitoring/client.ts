@@ -59,13 +59,13 @@ function dispatch(eventName: string, detail: Record<string, unknown>): void {
   }
 }
 
-async function sendAnalyze(input: NormalizedErrorInput): Promise<void> {
+async function sendAnalyze(input: NormalizedErrorInput, extra?: Record<string, unknown>): Promise<void> {
   if (!isBrowser()) return;
   try {
     const response = await fetch("/api/ai/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
+      body: JSON.stringify({ ...input, ...extra }),
     });
     if (response.ok) {
       const data = (await response.json()) as { issue: Record<string, unknown>; analysis: AiAnalysis };
@@ -131,7 +131,7 @@ export function isCriticalSeverity(severity: AiSeverity): boolean {
 export function forceAnalyze(input: NormalizedErrorInput): void {
   const settings = getAiSettings();
   const sanitized = sanitizeIssueInput(input);
-  void sendAnalyze(sanitized);
+  void sendAnalyze(sanitized, { force: true });
   if (settings.autoOpenCritical && isCriticalSeverity(sanitized.severity ?? "medium")) {
     dispatch(DISPATCH_OPEN, { issue: sanitized });
   }

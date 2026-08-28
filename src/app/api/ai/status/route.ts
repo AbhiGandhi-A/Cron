@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { enforceRateLimit, getAuthenticatedIdentifier, logError } from "@/lib/security";
 import { isGrokConfigured, resolveReasoningModel, resolveResearchModel } from "@/lib/ai/grok";
+import { usageSnapshot } from "@/lib/ai/optimizer";
 
 export async function GET(_req: Request) {
   try {
@@ -23,6 +24,7 @@ export async function GET(_req: Request) {
       researchModel: resolveResearchModel(),
       configured: isGrokConfigured(),
       analysisEnabled: process.env.AI_ANALYSIS_ENABLED !== "false",
+      usage: usageSnapshot(),
     });
   } catch (error) {
     logError("ai-status", "Failed to load AI status", error);

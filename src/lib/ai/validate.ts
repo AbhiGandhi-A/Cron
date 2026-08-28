@@ -133,6 +133,7 @@ export const analyzeInputSchema = z.object({
     timeout: z.number().int().min(1000).max(300000).default(30000),
     expectedStatus: z.number().int().min(100).max(599).optional().nullable(),
   }).optional().nullable(),
+  force: z.boolean().optional().default(false),
 }).strict();
 
 export type AnalyzeInput = z.infer<typeof analyzeInputSchema>;

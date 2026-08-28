@@ -9,6 +9,7 @@ import { callGrok, GrokUnavailableError, grokErrorMessage, resolveReasoningModel
 import { runWebResearch, shouldUseResearch } from "@/lib/ai/router";
 import { buildChatSystemPrompt, buildChatPrompt, buildIssueTextForChat } from "@/lib/ai/prompts";
 import { serializeIssue } from "@/lib/ai/issues";
+import { chatDedupeKey, findChatDedupe, storeChatDedupe } from "@/lib/ai/optimizer";
 import type { NormalizedErrorInput } from "@/lib/ai/types";
 
 const MAX_MESSAGES = 20;
@@ -38,6 +39,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
     const { issueId, message, context } = result.data;
+
+    const dedupeKey = chatDedupeKey(userId, issueId, message);
+    const cachedReply = findChatDedupe(dedupeKey);
+    if (cachedReply) {
+      return NextResponse.json(cachedReply);
+    }
 
     let issue: Awaited<ReturnType<typeof AiIssue.findOne>> | null = null;
     let history: Array<{ role: "user" | "assistant"; content: string }> = [];
@@ -109,12 +116,14 @@ export async function POST(req: Request) {
       const updated = [...(issue.conversation || []).slice(-(MAX_MESSAGES - 2)), { role: "user" as const, content: message, createdAt: now }, { role: "assistant" as const, content: reply, createdAt: now }];
       issue.conversation = updated;
       await issue.save();
-      return NextResponse.json({
+      const body: Record<string, unknown> = {
         reply,
         aiAvailable,
         conversation: updated.slice(-MAX_MESSAGES),
         issue: serializeIssue(issue),
-      });
+      };
+      storeChatDedupe(dedupeKey, body);
+      return NextResponse.json(body);
     }
 
     const conversation = await AiConversation.create({
@@ -127,12 +136,14 @@ export async function POST(req: Request) {
       ],
     });
 
-    return NextResponse.json({
+    const body: Record<string, unknown> = {
       reply,
       aiAvailable,
       conversationId: conversation._id.toString(),
       conversation: conversation.messages.slice(-MAX_MESSAGES),
-    });
+    };
+    storeChatDedupe(dedupeKey, body);
+    return NextResponse.json(body);
   } catch (error) {
     logError("ai-chat", "Failed to run AI chat", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

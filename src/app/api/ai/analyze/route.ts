@@ -8,6 +8,7 @@ import { analyzeInputSchema } from "@/lib/ai/validate";
 import { sanitizeIssueInput } from "@/lib/monitoring/normalize";
 import { upsertIssue, serializeIssue } from "@/lib/ai/issues";
 import { runAiAnalysis } from "@/lib/ai/analyze";
+import { decideReuseAnalysis, markDedupe, withAnalysisInFlight } from "@/lib/ai/optimizer";
 
 const ANALYSIS_RATE_LIMIT = 10;
 const ANALYSIS_WINDOW_MS = 60_000;
@@ -53,7 +54,8 @@ export async function POST(req: Request) {
       retryable: result.data.retryable ?? null,
     });
 
-    const { issue } = await upsertIssue(userId, sanitized);
+    const { issue, fingerprint } = await upsertIssue(userId, sanitized);
+    const manual = result.data.force === true;
 
     const limited = enforceRateLimit(`ai:analyze:${getAuthenticatedIdentifier(userId)}`, ANALYSIS_RATE_LIMIT, ANALYSIS_WINDOW_MS);
     if (limited) {
@@ -67,18 +69,28 @@ export async function POST(req: Request) {
     }
 
     let issueDoc = issue;
-    if (!issueDoc.analysis || !issueDoc.analysis.available) {
-      const outcome = await runAiAnalysis(sanitized);
-      const updated = await AiIssue.findByIdAndUpdate(
-        issueDoc._id,
-        { $set: { analysis: outcome.analysis } },
-        { new: true }
-      ).exec();
-      if (!updated) {
-        return NextResponse.json({ error: "Issue not found" }, { status: 404 });
-      }
-      issueDoc = updated;
+    const gate = decideReuseAnalysis({ analysis: issueDoc.analysis, manual });
+    if (gate.reuse) {
+      markDedupe();
+      return NextResponse.json({
+        issue: serializeIssue(issueDoc),
+        analysis: issueDoc.analysis,
+      });
     }
+
+    const outcome = await withAnalysisInFlight(
+      `${userId}:${fingerprint}`,
+      () => runAiAnalysis(sanitized)
+    );
+    const updated = await AiIssue.findByIdAndUpdate(
+      issueDoc._id,
+      { $set: { analysis: outcome.analysis } },
+      { new: true }
+    ).exec();
+    if (!updated) {
+      return NextResponse.json({ error: "Issue not found" }, { status: 404 });
+    }
+    issueDoc = updated;
 
     return NextResponse.json({
       issue: serializeIssue(issueDoc),

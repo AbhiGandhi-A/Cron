@@ -1,6 +1,7 @@
 export const GROK_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
 export const DEFAULT_GROK_MODEL = "openai/gpt-oss-120b";
 export const DEFAULT_RESEARCH_MODEL = "groq/compound-mini";
+import { markAiCall } from "./optimizer";
 
 export function resolveReasoningModel(): string {
   return process.env.GROQ_REASONING_MODEL || process.env.GROQ_MODEL || DEFAULT_GROK_MODEL;
@@ -102,6 +103,7 @@ export async function callGrok(
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    markAiCall(model, resolveReasoningModel());
     const response = await resolveFetch()(GROK_BASE_URL, {
       method: "POST",
       headers: {

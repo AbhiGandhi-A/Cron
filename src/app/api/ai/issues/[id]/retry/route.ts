@@ -6,6 +6,7 @@ import connectDb from "@/lib/mongodb";
 import { AiIssue } from "@/lib/models";
 import { serializeIssue } from "@/lib/ai/issues";
 import { executeHttpRequest } from "@/lib/execution-core";
+import { tryBeginRetry, endRetry } from "@/lib/ai/optimizer";
 
 const STORED_RESULT_BODY_BYTES = 20_000;
 
@@ -43,15 +44,25 @@ export async function POST(
     }
 
     const config = issue.retryable;
-    const result = await executeHttpRequest({
-      url: config.url,
-      method: config.method,
-      headers: config.headers ?? undefined,
-      body: config.body,
-      bodyType: config.bodyType ?? "json",
-      timeout: config.timeout || 30000,
-      expectedStatus: config.expectedStatus ?? null,
-    });
+    const retryKey = `${userId}:${id}`;
+    if (!tryBeginRetry(retryKey)) {
+      return NextResponse.json({ error: "Retry already in progress" }, { status: 409 });
+    }
+
+    let result;
+    try {
+      result = await executeHttpRequest({
+        url: config.url,
+        method: config.method,
+        headers: config.headers ?? undefined,
+        body: config.body,
+        bodyType: config.bodyType ?? "json",
+        timeout: config.timeout || 30000,
+        expectedStatus: config.expectedStatus ?? null,
+      });
+    } finally {
+      endRetry(retryKey);
+    }
 
     const storedResult = {
       status: result.status,

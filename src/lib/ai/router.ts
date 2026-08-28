@@ -12,6 +12,7 @@ import {
 } from "./grok";
 import { buildAnalyzeSystemPrompt, buildAnalyzePrompt } from "./prompts";
 import { analyzeResultSchema } from "./validate";
+import { getCachedResearch, storeResearch } from "./optimizer";
 
 export interface AnalyzeOutcome {
   analysis: AiAnalysis;
@@ -104,6 +105,9 @@ export function buildResearchPrompt(input: string): Array<{ role: "system" | "us
 }
 
 export async function runWebResearch(question: string): Promise<string | null> {
+  const cached = getCachedResearch(question);
+  if (cached !== null) return cached;
+
   try {
     const brief = await callGrok(buildResearchPrompt(question), {
       model: resolveResearchModel(),
@@ -111,7 +115,9 @@ export async function runWebResearch(question: string): Promise<string | null> {
       maxTokens: 900,
       temperature: 0,
     });
-    return brief.trim() ? brief : null;
+    const trimmed = brief.trim();
+    if (trimmed) storeResearch(question, trimmed);
+    return trimmed ? trimmed : null;
   } catch {
     return null;
   }
