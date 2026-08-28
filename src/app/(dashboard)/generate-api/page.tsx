@@ -42,8 +42,21 @@ function authLabel(mode: string): string {
   }
 }
 
+const AUTH_OPTIONS: Array<{ value: "" | "public" | "bearer"; label: string; hint: string }> = [
+  { value: "", label: "AI decides", hint: "AI picks the safest mode for your description" },
+  { value: "public", label: "Public", hint: "Open access, no key needed" },
+  { value: "bearer", label: "Private", hint: "Secret key via Authorization: Bearer" },
+];
+
+function callGuide(mode: string): string | null {
+  if (mode === "bearer") return 'curl -H "Authorization: Bearer <SECRET>"';
+  if (mode === "api-key") return 'curl -H "x-api-key: <SECRET>"';
+  return null;
+}
+
 export default function GenerateApiPage() {
   const [description, setDescription] = useState("");
+  const [authChoice, setAuthChoice] = useState<"" | "public" | "bearer">("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<GeneratedApiView | null>(null);
@@ -70,7 +83,10 @@ export default function GenerateApiPage() {
       const res = await fetch("/api/ai/create-api", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description: description.trim() }),
+        body: JSON.stringify({
+          description: description.trim(),
+          authMode: authChoice || undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -143,8 +159,30 @@ export default function GenerateApiPage() {
             rows={4}
             className="w-full text-sm bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
           />
+          <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 mt-4">
+            Authentication
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {AUTH_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setAuthChoice(option.value)}
+                className={`text-xs font-semibold px-3 py-2 rounded-xl border transition-colors text-left ${
+                  authChoice === option.value
+                    ? "bg-gray-900 border-gray-900 text-white"
+                    : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
+                }`}
+              >
+                {option.label}
+                <span className={`block text-[10px] font-normal mt-0.5 ${authChoice === option.value ? "text-gray-300" : "text-gray-400"}`}>
+                  {option.hint}
+                </span>
+              </button>
+            ))}
+          </div>
           <div className="flex items-center justify-between mt-3">
-            <p className="text-[11px] text-gray-400">The AI chooses the source, methods, auth, CORS and rate limits automatically.</p>
+            <p className="text-[11px] text-gray-400">The AI chooses the source, methods, CORS and rate limits automatically.</p>
             <button
               onClick={() => void handleGenerate()}
               disabled={submitting || !description.trim()}
@@ -200,6 +238,16 @@ export default function GenerateApiPage() {
                     {copiedId === `${created.id}-secret` ? "Copied" : "Copy"}
                   </button>
                 </div>
+                <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mt-4">How to call it</p>
+                <div className="mt-1.5 bg-gray-50 rounded-lg p-3 font-mono text-xs text-gray-800 break-all">
+                  <span className="text-gray-500">{callGuide(created.auth.mode)?.replace("<SECRET>", createdSecret)}</span> <span className="text-gray-800">{created.publicUrl}</span>
+                </div>
+              </div>
+            ) : created.auth.mode === "private" ? (
+              <div className="mt-4 bg-gray-50 border border-gray-200 rounded-xl p-3">
+                <p className="text-xs text-gray-600">
+                  This endpoint only works from the dashboard with your logged-in session (session cookie) &mdash; not for external callers.
+                </p>
               </div>
             ) : null}
           </div>

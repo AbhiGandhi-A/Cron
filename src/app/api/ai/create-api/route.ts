@@ -5,12 +5,14 @@ import { enforceRateLimit, getAuthenticatedIdentifier, logError, readJsonBody, s
 import connectDb from "@/lib/mongodb";
 import { callGrokJson, isGrokConfigured, resolveReasoningModel, GrokUnavailableError, GrokTimeoutError, GrokHttpError, GrokMalformedError } from "@/lib/ai/grok";
 import { buildCreateApiSystemPrompt, buildCreateApiPrompt } from "@/lib/ai/prompts";
-import { generateApiInputSchema } from "@/lib/ai/validate";
+import { generateApiInputSchema, ALLOWED_AUTH_MODES } from "@/lib/ai/validate";
 import { createGeneratedApi, serializeGeneratedApi } from "@/lib/generated-apis/service";
 import { GeneratedApi } from "@/lib/models";
 
 const MAX_DESCRIPTION_LENGTH = 8000;
 const MAX_APIS_PER_USER = 20;
+
+type AuthMode = (typeof ALLOWED_AUTH_MODES)[number];
 
 export async function POST(req: Request) {
   try {
@@ -45,6 +47,15 @@ export async function POST(req: Request) {
     }
     if (description.trim().length > MAX_DESCRIPTION_LENGTH) {
       return NextResponse.json({ error: "Description is too long" }, { status: 400 });
+    }
+
+    const authMode = (parsed as { authMode?: unknown })?.authMode;
+    let selectedAuthMode: AuthMode | null = null;
+    if (authMode !== undefined && authMode !== null && authMode !== "") {
+      if (typeof authMode !== "string" || !ALLOWED_AUTH_MODES.includes(authMode as AuthMode)) {
+        return NextResponse.json({ error: "Invalid auth mode" }, { status: 400 });
+      }
+      selectedAuthMode = authMode as AuthMode;
     }
 
     const existing = await GeneratedApi.countDocuments({ userId });
@@ -107,7 +118,9 @@ export async function POST(req: Request) {
       );
     }
 
-    const { doc, createdSecret } = await createGeneratedApi(userId, validated.data);
+    const config =
+      selectedAuthMode ? { ...validated.data, authMode: selectedAuthMode } : validated.data;
+    const { doc, createdSecret } = await createGeneratedApi(userId, config);
 
     return NextResponse.json(
       {
