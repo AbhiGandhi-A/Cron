@@ -112,6 +112,7 @@ export function buildCreateApiSystemPrompt(): string {
     "Allowed authMode values: public, api-key, bearer, private. private = owner session only; api-key/bearer require a client secret you never include in output (the app generates secrets server-side).",
     'cors.origins: array of allowed origins or ["*"] when open access is intended; cors.enabled must be true for browser callers from other sites.',
     "Rate limits: pick a sane limit between 1 and 1000 per window.",
+    "Strict value bounds: method must be one of GET, POST, PUT, PATCH, DELETE, HEAD; timeout between 1000 and 300000 ms; source.url must be absolute (http:// or https://); rateLimit.limit 1-1000; rateLimit.windowMs between 1000 and 3600000; response.statusCode between 200 and 599; response.maxSizeBytes between 1024 and 500000; source.collection must come from the allowlist above and source.fields must be a subset of that collection's allowed fields.",
     "Respond with a SINGLE JSON object, no surrounding text, matching exactly this shape (body is only meaningful for static):",
     example,
     "Rules:",

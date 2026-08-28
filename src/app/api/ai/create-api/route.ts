@@ -56,14 +56,34 @@ export async function POST(req: Request) {
     }
 
     let raw: Record<string, unknown>;
+    let validated: ReturnType<typeof generateApiInputSchema.safeParse>;
+    const apiOptions = { timeoutMs: 45_000, maxTokens: 1600, model: resolveReasoningModel() } as const;
+    const systemPrompt = buildCreateApiSystemPrompt();
+    const userPrompt = buildCreateApiPrompt(description.trim());
     try {
       raw = await callGrokJson(
         [
-          { role: "system", content: buildCreateApiSystemPrompt() },
-          { role: "user", content: buildCreateApiPrompt(description.trim()) },
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
         ],
-        { timeoutMs: 45_000, maxTokens: 1600, model: resolveReasoningModel() }
+        apiOptions
       );
+      validated = generateApiInputSchema.safeParse(raw);
+      if (!validated.success) {
+        const issues = validated.error.issues
+          .map((item) => `${item.path.join(".") || "."}: ${item.message}`)
+          .join("; ")
+          .slice(0, 500);
+        raw = await callGrokJson(
+          [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+            { role: "user", content: `Your previous configuration was rejected. Fix these validation errors and return ONLY the corrected single JSON object:\n${issues}` },
+          ],
+          apiOptions
+        );
+        validated = generateApiInputSchema.safeParse(raw);
+      }
     } catch (error) {
       if (error instanceof GrokUnavailableError) {
         return NextResponse.json({ error: "AI is not configured. Set GROQ_API_KEY in the environment." }, { status: 503 });
@@ -75,7 +95,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "The AI could not generate a valid API configuration. Please try again." }, { status: 502 });
     }
 
-    const validated = generateApiInputSchema.safeParse(raw);
     if (!validated.success) {
       const issue = sanitizeForLog(
         validated.error.issues.map((item) => `${item.path.join(".")}: ${item.message}`).join("; "),
