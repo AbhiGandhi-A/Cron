@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import Sidebar from "./Sidebar";
 import { OnboardingProvider } from "./onboarding/OnboardingTour";
+import AiAssistant from "./ai/AiAssistant";
+import ErrorBoundary from "./ai/ErrorBoundary";
 
 export default function DashboardLayout({
   children,
@@ -38,9 +40,12 @@ export default function DashboardLayout({
       <div className="flex min-h-screen bg-gray-50/80">
         <Sidebar />
         <main className="flex-1 min-w-0 overflow-auto">
-          <div className="p-4 sm:p-6 lg:p-8 max-w-[1400px]">{children}</div>
+          <ErrorBoundary>
+            <div className="p-4 sm:p-6 lg:p-8 max-w-[1400px]">{children}</div>
+          </ErrorBoundary>
         </main>
       </div>
+      <AiAssistant />
     </OnboardingProvider>
   );
 }

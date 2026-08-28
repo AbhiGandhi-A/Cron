@@ -3,11 +3,25 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import DashboardLayout from "@/components/DashboardLayout";
+import {
+  DEFAULT_AI_SETTINGS,
+  getAiSettings,
+  saveAiSettings,
+  type AiMonitoringSettings,
+} from "@/lib/monitoring/settings";
+
+interface AiStatus {
+  configured: boolean;
+  model: string | null;
+  analysisEnabled: boolean;
+}
 
 export default function SettingsPage() {
   const { data: session } = useSession();
   const [monthlyRemaining, setMonthlyRemaining] = useState<number | null>(null);
   const [maxExecutions, setMaxExecutions] = useState<number | null>(null);
+  const [aiSettings, setAiSettings] = useState<AiMonitoringSettings>({ ...DEFAULT_AI_SETTINGS });
+  const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
 
   useEffect(() => {
     fetch("/api/dashboard")
@@ -18,7 +32,18 @@ export default function SettingsPage() {
       })
       .catch(() => {})
       ;
+    setAiSettings(getAiSettings());
+    fetch("/api/ai/status")
+      .then((r) => r.json())
+      .then(setAiStatus)
+      .catch(() => setAiStatus(null));
   }, []);
+
+  const updateAiSetting = (patch: Partial<AiMonitoringSettings>) => {
+    const next = { ...aiSettings, ...patch };
+    setAiSettings(next);
+    saveAiSettings(next);
+  };
 
   return (
     <DashboardLayout>
@@ -85,8 +110,105 @@ export default function SettingsPage() {
               </p>
             </div>
           </div>
+
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h2 className="text-base font-bold text-gray-900">AI Dev Assistant</h2>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Model: {aiStatus?.model ?? (aiStatus === null ? "checking..." : "not configured")}{" "}
+                  {aiStatus?.configured ? (
+                    <span className="text-emerald-600 font-semibold">· Configured</span>
+                  ) : aiStatus ? (
+                    <span className="text-amber-600 font-semibold">· Add GROK_API_KEY to enable</span>
+                  ) : null}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <ToggleRow
+                title="Enabled"
+                description="Capture frontend errors and API failures for the assistant"
+                checked={aiSettings.enabled}
+                onChange={(value) => updateAiSetting({ enabled: value })}
+              />
+              <ToggleRow
+                title="Auto-analyze errors"
+                description="Send captured errors to Groq for root-cause and fix suggestions"
+                checked={aiSettings.autoAnalyze}
+                onChange={(value) => updateAiSetting({ autoAnalyze: value })}
+              />
+              <ToggleRow
+                title="Auto-open on critical errors"
+                description="Open the assistant automatically when a critical error is captured"
+                checked={aiSettings.autoOpenCritical}
+                onChange={(value) => updateAiSetting({ autoOpenCritical: value })}
+              />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-4 border-b border-gray-100">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
+                    Normal threshold (ms)
+                  </label>
+                  <input
+                    type="number"
+                    min={100}
+                    max={60000}
+                    value={aiSettings.normalMs}
+                    onChange={(event) => updateAiSetting({ normalMs: Number(event.target.value) || DEFAULT_AI_SETTINGS.normalMs })}
+                    className="w-full text-sm bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                  <p className="text-[11px] text-gray-400 mt-1">Requests slower than this are flagged as slow when enabled.</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
+                    Warning threshold (ms)
+                  </label>
+                  <input
+                    type="number"
+                    min={500}
+                    max={120000}
+                    value={aiSettings.warningMs}
+                    onChange={(event) => updateAiSetting({ warningMs: Number(event.target.value) || DEFAULT_AI_SETTINGS.warningMs })}
+                    className="w-full text-sm bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                  <p className="text-[11px] text-gray-400 mt-1">Requests slower than this are flagged as warnings.</p>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </DashboardLayout>
+  );
+}
+
+function ToggleRow(props: {
+  title: string;
+  description: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between py-4 border-b border-gray-100">
+      <div>
+        <p className="text-sm font-semibold text-gray-900">{props.title}</p>
+        <p className="text-xs text-gray-400 mt-0.5">{props.description}</p>
+      </div>
+      <button
+        role="switch"
+        aria-checked={props.checked}
+        onClick={() => props.onChange(!props.checked)}
+        className={`w-11 h-6 rounded-full transition-colors relative shrink-0 ${
+          props.checked ? "bg-brand-600" : "bg-gray-200"
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transform transition-transform ${
+            props.checked ? "translate-x-5" : "translate-x-0.5"
+          }`}
+        />
+      </button>
+    </div>
   );
 }

@@ -6,7 +6,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import StatCard from "@/components/StatCard";
 import StatusBadge from "@/components/StatusBadge";
 import EmptyState from "@/components/EmptyState";
-import { formatRelativeTime } from "@/lib/utils";
+import { formatRelativeTime, cn } from "@/lib/utils";
 
 interface DashboardData {
   totalJobs: number;
@@ -25,9 +25,33 @@ interface DashboardData {
   }>;
 }
 
+interface AiMonitoringData {
+  openIssues: number;
+  criticalIssues: number;
+  pendingAnalysis: number;
+  configured: boolean;
+  recentIssues: Array<{
+    id: string;
+    title: string;
+    severity: string;
+    resolved: boolean;
+    occurrences: number;
+    lastSeenAt: string;
+    hasAnalysis: boolean;
+  }>;
+}
+
+const AI_SEVERITY_DOT: Record<string, string> = {
+  critical: "bg-red-500",
+  high: "bg-orange-500",
+  medium: "bg-amber-400",
+  low: "bg-sky-400",
+};
+
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [aiData, setAiData] = useState<AiMonitoringData | null>(null);
 
   useEffect(() => {
     fetch("/api/dashboard")
@@ -35,7 +59,16 @@ export default function DashboardPage() {
       .then(setData)
       .catch(console.error)
       .finally(() => setLoading(false));
+
+    fetch("/api/ai/monitoring")
+      .then((r) => r.json())
+      .then(setAiData)
+      .catch(() => setAiData(null));
   }, []);
+
+  const openAssistant = () => {
+    window.dispatchEvent(new CustomEvent("cronjobio:ai:open"));
+  };
 
   return (
     <DashboardLayout>
@@ -96,6 +129,64 @@ export default function DashboardPage() {
                 color="bg-red-50"
               />
             </div>
+
+            {aiData && (
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-8">
+                <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
+                  <h2 className="text-lg font-bold text-gray-900">AI Monitoring</h2>
+                  <div className="flex items-center gap-3">
+                    {!aiData.configured && aiData.openIssues === 0 && (
+                      <span className="text-[11px] font-medium text-gray-400">
+                        AI analysis not configured (add GROK_API_KEY to enable)
+                      </span>
+                    )}
+                    <button
+                      onClick={openAssistant}
+                      className="text-sm text-brand-600 hover:text-brand-700 font-semibold"
+                    >
+                      Open assistant &rarr;
+                    </button>
+                  </div>
+                </div>
+                <div className="p-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-6">
+                    <div>
+                      <p className="text-3xl font-bold text-gray-900">{aiData.openIssues}</p>
+                      <p className="text-sm text-gray-500 mt-1">Open issues</p>
+                    </div>
+                    <div>
+                      <p className="text-3xl font-bold text-red-500">{aiData.criticalIssues}</p>
+                      <p className="text-sm text-gray-500 mt-1">High / critical</p>
+                    </div>
+                    <div>
+                      <p className="text-3xl font-bold text-amber-500">{aiData.pendingAnalysis}</p>
+                      <p className="text-sm text-gray-500 mt-1">Awaiting AI analysis</p>
+                    </div>
+                  </div>
+                  {aiData.recentIssues.length > 0 ? (
+                    <ul className="divide-y divide-gray-50">
+                      {aiData.recentIssues.map((issue) => (
+                        <li key={issue.id} className="py-3 flex items-center gap-3">
+                          <span className={cn("w-2 h-2 rounded-full shrink-0", AI_SEVERITY_DOT[issue.severity] ?? "bg-gray-300")} />
+                          <p className="flex-1 min-w-0 text-sm font-medium text-gray-800 truncate">{issue.title}</p>
+                          <span className="text-[11px] text-gray-400">
+                            {issue.hasAnalysis ? "Analyzed" : "Pending"}
+                            {issue.occurrences > 1 ? ` · ×${issue.occurrences}` : ""}
+                          </span>
+                          <span className="text-[11px] text-gray-400 w-20 text-right">
+                            {formatRelativeTime(issue.lastSeenAt)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-gray-400 text-center py-4">
+                      No AI issues detected in the last 24 hours.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
               <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">

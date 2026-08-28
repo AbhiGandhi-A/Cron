@@ -241,6 +241,64 @@ The database schema includes placeholders for future payment support:
 
 No payment code exists in this MVP. Do NOT add fake pricing pages.
 
+## 11. AI Dev Assistant (optional)
+
+A passive monitoring + analysis layer powered by Groq (OpenAI-compatible API, AI key from [console.groq.com](https://console.groq.com/keys)) that never changes how jobs, the scheduler, or the API Tester behave, and degrades gracefully if no key is configured.
+
+### Enabling it
+
+Add to `.env` (server-side only, never sent to the browser):
+
+```env
+GROK_API_KEY="gsk_your-groq-key"
+GROK_MODEL="llama-3.3-70b-versatile"
+AI_ANALYSIS_ENABLED="true"
+```
+
+Without a key, everything still runs: issues are captured and stored, and every AI action returns a friendly "AI is not configured" message instead of crashing.
+
+### What it does
+
+- **Frontend + API monitoring** - a small client library (`src/lib/monitoring/client.ts`) wraps `fetch`/XHR, captures uncaught errors, failed requests and slow requests, fingerprints + redacts them (passwords, tokens, API keys, URLs wiped), and stores them as `AiIssue` documents. Deduplication, auto-open on critical errors, analyze-on-error, and slow-request thresholds are toggles in **Settings &rarr; AI Dev Assistant** (stored per browser in localStorage).
+- **AI Assistant panel** - the floating button opens a drawer with the issue list, per-issue Groq analysis (root cause / fix / impact / prevention), "Copy fix", "Retry failed operation" (replays the stored request and records the result), resolve/reopen, clear, and a follow-up chat scoped to the issue plus a standalone chat.
+- **Generate API** (`/generate-api` page) - describe an endpoint in plain English; Groq proposes a config that is **strictly validated** (zod) and only **allowlisted** sources/collections/fields/methods can be exposed. The result is a live endpoint at `/api/public/<agentId>` with chooseable auth (`public`, `api-key`, `bearer`, `private` - the last is locked to the signed-in session), CORS rules, per-API rate limiting, and per-day request analytics. Secrets are stored hashed (`sha256`) and only shown once at creation.
+
+### Calling a generated API
+
+```
+# public
+GET https://<app>/api/public/<agentId>
+
+# api-key
+curl https://<app>/api/public/<agentId> -H "x-api-key: <secret>"
+
+# bearer
+curl https://<app>/api/public/<agentId> -H "Authorization: Bearer <secret>"
+
+# private (same logged-in session/browser cookie)
+```
+
+### AI endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/ai/status` | AI configuration status (configured, model, enabled) |
+| POST | `/api/ai/analyze` | Analyze an error now (rate limited; failure still records the issue) |
+| GET/DELETE | `/api/ai/issues` | List / clear issues (`?status=open|resolved|all`) |
+| GET/PATCH | `/api/ai/issues/[id]` | Issue detail / resolve, reopen, severity changes |
+| POST | `/api/ai/issues/[id]/retry` | Re-run the stored failed request |
+| POST | `/api/ai/chat` | Follow-up chat (issue-scoped or standalone) |
+| GET | `/api/ai/monitoring` | Dashboard widget summary (open/critical/pending) |
+| POST | `/api/ai/create-api` | AI-generate a new API from a description |
+| GET/POST | `/api/generated-apis` | List / create generated APIs |
+| GET/PATCH/DELETE | `/api/generated-apis/[id]` | View / update / delete |
+| POST | `/api/generated-apis/[id]/regenerate` | Rotate the API secret |
+| GET/POST/PUT/PATCH/DELETE | `/api/public/[token]` | Live generated-API endpoints (public, bypasses the dashboard auth middleware) |
+
+### Tests
+
+AI-specific tests run with the rest of the suite (`npm test`): `tests/ai-redaction.test.ts`, `tests/ai-grok.test.ts` (injected fake transport, no network), `tests/ai-validate.test.ts`, and `tests/ai-models.test.ts` (in-memory MongoDB for issues, generated-API auth/execution, analytics, CORS).
+
 ## Project Structure
 
 ```
@@ -308,6 +366,15 @@ cron-job-saas/
 | GET | `/api/jobs/[id]/history` | Get execution history |
 | GET | `/api/scheduler` | Scheduler health status |
 | GET | `/api/wake-render` | Vercel→Render wake relay (token-protected, fixed URL) |
+| GET | `/api/ai/status` | AI configuration status |
+| POST | `/api/ai/analyze` | Analyze an error with Groq |
+| GET/PATCH | `/api/ai/issues/[id]` | Issue detail / resolve / severity |
+| POST | `/api/ai/issues/[id]/retry` | Re-run a stored failed request |
+| POST | `/api/ai/chat` | AI follow-up chat |
+| POST | `/api/ai/create-api` | Generate an API from a description |
+| GET/POST | `/api/generated-apis` | List / create generated APIs |
+| DELETE | `/api/generated-apis/[id]` | Delete a generated API |
+| GET/POST/PUT/PATCH/DELETE | `/api/public/[token]` | Live generated-API endpoints (no dashboard auth) |
 
 ## License
 
