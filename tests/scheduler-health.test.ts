@@ -1,10 +1,22 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import type { Server } from "http";
-import { startHealthServer, markSchedulerRunning, isSchedulerRunning } from "../scheduler/health";
+import { startHealthServer, markSchedulerRunning, isSchedulerRunning, startKeepAlive, stopKeepAlive, buildKeepAliveUrl } from "../scheduler/health";
 
 let server: Server | null = null;
 let port = 0;
+
+function withEnv(name: string, value: string | undefined, fn: () => void): void {
+  const previous = process.env[name];
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+  try {
+    fn();
+  } finally {
+    if (previous === undefined) delete process.env[name];
+    else process.env[name] = previous;
+  }
+}
 
 before(async () => {
   process.env.PORT = "0";
@@ -65,6 +77,49 @@ test("unknown paths return 404 and expose no job data", async () => {
   assert.equal(res.status, 404);
   const body = await res.json();
   assert.deepEqual(body, { error: "Not found" });
+});
+
+test("root path returns a tiny 200 text/plain OK for bare-domain keep-alive URLs", async () => {
+  const res = await fetch("http://127.0.0.1:" + port + "/");
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get("content-type") || "", /text\/plain/);
+  assert.equal(await res.text(), "OK");
+});
+
+test("buildKeepAliveUrl is null when RENDER_EXTERNAL_URL is unset", () => {
+  withEnv("RENDER_EXTERNAL_URL", undefined, () => {
+    assert.equal(buildKeepAliveUrl(), null);
+  });
+});
+
+test("buildKeepAliveUrl normalizes the public URL and appends /health", () => {
+  withEnv("RENDER_EXTERNAL_URL", "https://cron-8vgj.onrender.com/", () => {
+    assert.equal(buildKeepAliveUrl(), "https://cron-8vgj.onrender.com/health");
+  });
+});
+
+test("startKeepAlive is a silent no-op without RENDER_EXTERNAL_URL", () => {
+  withEnv("RENDER_EXTERNAL_URL", undefined, () => {
+    process.env.RENDER = "true";
+    assert.doesNotThrow(() => startKeepAlive());
+    assert.doesNotThrow(() => stopKeepAlive());
+    delete process.env.RENDER;
+  });
+});
+
+test("self keep-alive ping failures are isolated and never crash", async () => {
+  process.env.RENDER = "true";
+  process.env.RENDER_EXTERNAL_URL = "http://127.0.0.1:9";
+  try {
+    startKeepAlive();
+    // Immediate first ping targets a refused local port; give it a moment to
+    // reject through the isolated catch without throwing.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.doesNotThrow(() => stopKeepAlive());
+  } finally {
+    delete process.env.RENDER;
+    delete process.env.RENDER_EXTERNAL_URL;
+  }
 });
 
 test("health server is disabled locally unless opted in", () => {

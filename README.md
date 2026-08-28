@@ -190,28 +190,30 @@ Configured in `scheduler/scheduler.ts`:
 
 ## 9. Deploying the Scheduler to Render as a Web Service (production)
 
-Host the Next.js app on Vercel, and the scheduler on Render as a **free-tier Web Service** that is woken/kept alive by an external uptime cron (**cron-job.org**) calling Render's `/health` every ~6 minutes. This is intentional (not a paid Background Worker) — Render free Web Services sleep after ~15 min of no inbound traffic, and cron-job.org keeps the scheduler woken:
+Host the Next.js app on Vercel, and the scheduler on Render as a **free-tier Web Service** that is woken/kept alive by an external uptime cron (**cron-job.org**) calling Render's `/health`. This is intentional (not a paid Background Worker) — Render free Web Services sleep after ~15 min of no inbound traffic, and cron-job.org keeps the scheduler woken:
 
 ```
 USER CREATES JOB → VERCEL (saves to MongoDB) → MONGODB ATLAS →
-cron-job.org (GET https://<YOUR-RENDER-URL>/health every ~6 min) → RENDER SCHEDULER →
+cron-job.org (GET https://<YOUR-RENDER-URL>/health) → RENDER SCHEDULER →
 MONGODB POLL → JOB EXECUTES → EXECUTION SAVED → nextRunAt ADVANCES → NEXT EXECUTION
 ```
 
-cron-job.org and Vercel only generate/gate inbound traffic — **they never execute jobs.** The Render scheduler decides what is due from MongoDB. A token-protected Vercel wake relay (`GET /api/wake-render`) also exists as a fallback if a direct cron-job.org → Render call is ever blocked, but the direct path is primary.
+cron-job.org and Vercel only generate/gate inbound traffic — **they never execute jobs.** The Render scheduler decides what is due from MongoDB. A token-protected Vercel wake relay (`GET /api/wake-render`) also exists as a fallback, but the direct path is primary.
+
+> **Why a 30-minute cron-job.org schedule works.** A free Render Web Service sleeps after ~15 minutes of no inbound traffic, and Render answers the first request after a sleep with a verbose **HTML 502 cold-start page**. cron-job.org buffers the entire page and, because its output limit is small (~4 kB, see cron-job.org's "output too large" docs), marks the execution as **Failed (output too large)** — exactly what you saw at every 30-minute ping. The scheduler therefore **self-pings its own `RENDER_EXTERNAL_URL/health` every 2 minutes** (`SCHEDULER_KEEPALIVE_INTERVAL_MS`, default `120000`) from `scheduler/health.ts`. That inbound traffic resets the idle timer, so the instance never sleeps and every cron-job.org ping is answered by our tiny `/health` response instead of a cold-start error page. A self-ping can never wake an *already* sleeping instance, so keep the first deploy honest: any request to `/`, `/health`, or `/wake` after a genuine cold boot returns the small response as soon as boot completes.
 
 1. Create a `render.yaml`-based Blueprint (included in this repo) or a manual **Web Service**:
    - **Type**: Web Service (free tier) — NOT a paid Background Worker
    - **Build command**: `npm install` (must keep dev dependencies so `tsx` is available)
-   - **Start command**: `npm run scheduler` — the same long-running process (a) runs the Mongo scheduler loop and (b) binds `0.0.0.0:$PORT` serving `GET /health` and `GET /wake`
+   - **Start command**: `npm run scheduler` — the same long-running process (a) runs the Mongo scheduler loop and (b) binds `0.0.0.0:$PORT` serving `GET /health`, `GET /wake`, and `GET /` (tiny `OK`), plus (c) self-pings `/health` every 2 minutes to prevent free-tier idle sleep
    - **Runtime**: Node
-2. Set the same env vars on both Vercel and Render (Render: `MONGODB_URI`, `NEXTAUTH_URL`, `NEXT_PUBLIC_APP_URL`, `NEXTAUTH_SECRET`, `RATELIMIT_SECRET`, `CSRF_SECRET`, `HEADER_ENCRYPTION_KEY`, `SCHEDULER_API_TOKEN`). Keys used to encrypt job headers must match across hosts (`MONGODB_URI` and `HEADER_ENCRYPTION_KEY` must MATCH between Vercel and Render).
+2. Set the same env vars on both Vercel and Render (Render: `MONGODB_URI`, `NEXTAUTH_URL`, `NEXT_PUBLIC_APP_URL`, `NEXTAUTH_SECRET`, `RATELIMIT_SECRET`, `CSRF_SECRET`, `HEADER_ENCRYPTION_KEY`, `SCHEDULER_API_TOKEN`). Keys used to encrypt job headers must match across hosts (`MONGODB_URI` and `HEADER_ENCRYPTION_KEY` must MATCH between Vercel and Render). Render also injects `RENDER_EXTERNAL_URL` (used by the self keep-alive) and `PORT`.
 3. Deploy. The Render Web Service connects to the **same MongoDB** as Vercel — no network link between them is needed.
-4. Configure **cron-job.org** to call `https://<YOUR-RENDER-DOMAIN>/health` every **~6 minutes** (comfortably under the ~15-min free-tier idle timeout). `/health` returns quickly (no auth, no Mongo work), never executes jobs, and never starts a second scheduler — it only generates the inbound traffic that wakes/keeps the process alive; the countdown of cron-job.org execution is separate from CronJob.io job execution.
-5. Expected logs on Render: `[INFO] [scheduler] Connecting to MongoDB...`, `Worker started (id=..., host=..., pid=...)`, `Health/wake server listening on 0.0.0.0:<port>`, `Scheduler loop started`, then per-cycle `Found N due job(s)` and `Job <id> completed: SUCCESS (HTTP 200 ...)`.
+4. Configure **cron-job.org** to call **`https://<YOUR-RENDER-DOMAIN>/health`** on your chosen schedule (e.g. every 30 minutes). Expected result every run: **HTTP 200**, `Content-Type: application/json`, body `{"status":"ok","scheduler":"running","uptime":…}` (≈60 bytes, far below cron-job.org's output cap). The self keep-alive keeps the instance warm between pings, and `/health` never executes jobs or starts a second scheduler — it only generates inbound traffic. If your cron-job.org job uses the bare domain, it now also gets `HTTP 200 text/plain "OK"`.
+5. Expected logs on Render: `[INFO] [scheduler] Connecting to MongoDB...`, `Worker started (id=..., host=..., pid=...)`, `Health/wake server listening on 0.0.0.0:<port>`, `Self keep-alive enabled: pinging https://…/health every 120000ms`, `Scheduler loop started`, then per-cycle `Found N due job(s)` and `Job <id> completed: SUCCESS (HTTP 200 ...)`.
 6. Verify liveness on the dashboard ("Scheduler" status must show ONLINE) or via `GET /api/scheduler`.
 
-> Accurate terminology: a Render **free** Web Service is **kept active/woken by an external cron-job.org HTTP request approximately every 6 minutes** — it is not "always-on". If the instance genuinely sleeps between wake-ups, scheduled execution cannot be guaranteed during that sleeping window; on wake, the scheduler detects overdue `nextRunAt` jobs and applies the catch-up policy (item 8), so it never floods duplicates. Watch Render's monthly free instance hours (`free` plan: ~750 hrs/mo across web services) — a 24/7 woken service consumes them; the account may be suspended if the included hours are exhausted.
+> Accurate terminology: a Render **free** Web Service is **kept awake by the scheduler's own 2-minute self-ping**, with cron-job.org acting as an external watchdog/wake. It is not "always-on" in the paid sense. If the instance ever genuinely sleeps (e.g. after a deploy or a >15-min self-ping outage), scheduled execution cannot be guaranteed during that sleeping window; on wake, the scheduler detects overdue `nextRunAt` jobs and applies the catch-up policy (item 8), so it never floods duplicates. An always-awake free service consumes ~744 of the ~750 monthly free instance hours — budget accordingly.
 
 ### Process management with PM2 (VPS alternative)
 

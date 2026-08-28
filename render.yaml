@@ -3,12 +3,19 @@ services:
   # HTTPS traffic to the process (required so the service can be woken), and the
   # same long-running Node process both (1) runs the MongoDB scheduler loop and
   # (2) serves minimal /health + /wake HTTP so cron-job.org can send a
-  # keep-alive/wake request every ~6 minutes.
+  # keep-alive/wake request.
   #
   # The cron-job.org request ONLY wakes/keeps the service alive. It never
   # executes jobs — the scheduler itself polls MongoDB and decides what is due
   # (incl. missed jobs after a sleep period). Sleep/wake + catch-up cap logic
   # is in scheduler/scheduler.ts. This is NOT an always-on worker.
+  #
+  # Because a free Render Web Service sleeps after ~15 min of no inbound
+  # traffic, the scheduler also self-pings its own RENDER_EXTERNAL_URL/health
+  # every 2 min (scheduler/health.ts startKeepAlive) so the external
+  # cron-job.org ping never lands on a sleeping instance — Render answers a
+  # sleeping instance's first request with a verbose HTML 502 page that
+  # cron-job.org rejects as "output too large".
   - type: web
     name: cronjob-scheduler
     runtime: node

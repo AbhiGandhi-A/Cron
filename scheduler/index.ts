@@ -1,7 +1,7 @@
 import "dotenv/config";
 
 import { startScheduler, stopScheduler } from "./scheduler";
-import { healthServerEnabled, startHealthServer, stopHealthServer, markSchedulerRunning } from "./health";
+import { healthServerEnabled, startHealthServer, stopHealthServer, startKeepAlive, stopKeepAlive, markSchedulerRunning } from "./health";
 import { logger } from "./logger";
 
 let isShuttingDown = false;
@@ -16,6 +16,7 @@ async function shutdown(code: number): Promise<void> {
     // heartbeat OFFLINE, close Mongo), then stop accepting new HTTP requests
     // to the health/wake server before the process exits.
     await stopScheduler();
+    stopKeepAlive();
     stopHealthServer();
   } catch (error) {
     logger.error("index", "Error during shutdown", error);
@@ -64,11 +65,19 @@ async function main(): Promise<void> {
 
   // Render Web Service ingress: bind a minimal HTTP server to 0.0.0.0:$PORT.
   // It must be up quickly so Render marks the instance healthy, and it doubles
-  // as the way cron-job.org wakes/keeps the free Web Service alive (~6 min).
-  // Automatically ON under Render (RENDER=true); also forceable with
-  // SCHEDULER_HEALTH_ENABLED=true. Routes: GET /health, GET /wake.
+  // as the way cron-job.org wakes/keeps the free Web Service alive. Automatically
+  // ON under Render (RENDER=true); also forceable with
+  // SCHEDULER_HEALTH_ENABLED=true. Routes: GET /health, GET /wake, GET /.
+  //
+  // While the external cron-job.org every-30-minutes request is fine, a free
+  // Render Web Service sleeps after ~15 min without inbound traffic, so we also
+  // start a self keep-alive that pings our own /health every 2 min. That keeps
+  // cron-job.org's request from ever landing on a sleeping instance (which
+  // Render answers with a verbose HTML 502 page that cron-job.org rejects as
+  // "output too large"). The pings only touch /health; they never execute jobs.
   if (healthServerEnabled()) {
     startHealthServer();
+    startKeepAlive();
   }
 
   await startScheduler();
