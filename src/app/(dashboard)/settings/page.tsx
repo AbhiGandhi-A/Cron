@@ -202,13 +202,13 @@ function ToggleRow(props: {
         role="switch"
         aria-checked={props.checked}
         onClick={() => props.onChange(!props.checked)}
-        className={`w-11 h-6 rounded-full transition-colors relative shrink-0 ${
+        className={`w-11 h-6 rounded-full transition-colors relative shrink-0 flex items-center ${
           props.checked ? "bg-brand-600" : "bg-gray-200"
         }`}
       >
         <span
-          className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transform transition-transform ${
-            props.checked ? "translate-x-5" : "translate-x-0.5"
+          className={`w-5 h-5 rounded-full bg-white shadow transition-transform ${
+            props.checked ? "translate-x-5.5" : "translate-x-0.5"
           }`}
         />
       </button>
