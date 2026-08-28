@@ -408,7 +408,7 @@ export default function AiAssistant() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-bold text-gray-900">AI Dev Assistant</h2>
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-brand-600 bg-brand-50 px-2 py-0.5 rounded-full">Groq</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-brand-600 bg-brand-50 px-2 py-0.5 rounded-full">AI</span>
             </div>
             <p className="text-[11px] text-gray-500 mt-0.5">Errors, fixes, and follow-up help</p>
           </div>
