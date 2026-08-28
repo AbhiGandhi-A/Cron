@@ -13,6 +13,10 @@ async function getUserId(): Promise<string | null> {
   return (session.user as { id: string }).id;
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export async function GET(req: Request) {
   try {
     const userId = await getUserId();
@@ -28,13 +32,26 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const { page, limit, skip } = validatePaginationParams(searchParams);
 
+    const search = (searchParams.get("search") || "").trim();
+    const enabledParam = (searchParams.get("enabled") || "").trim();
+
+    const query: Record<string, unknown> = { userId };
+    if (enabledParam === "true") query.isActive = true;
+    if (enabledParam === "false") query.isActive = false;
+    if (search) {
+      query.$or = [
+        { name: { $regex: escapeRegExp(search), $options: "i" } },
+        { url: { $regex: escapeRegExp(search), $options: "i" } },
+      ];
+    }
+
     const [jobs, total] = await Promise.all([
-      CronJob.find({ userId })
+      CronJob.find(query)
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
-      CronJob.countDocuments({ userId }),
+      CronJob.countDocuments(query),
     ]);
 
     return NextResponse.json({
@@ -121,6 +138,8 @@ export async function POST(req: Request) {
       isActive: data.isActive,
       timeout: data.timeout,
       retryCount: data.retryCount,
+      expectedStatus: data.expectedStatus ?? null,
+      expectedResponseRegex: data.expectedResponseRegex ?? null,
       notifications: data.notifications || undefined,
       nextRunAt,
     });

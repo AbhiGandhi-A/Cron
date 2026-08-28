@@ -33,6 +33,8 @@ const CronJobSchema = new mongoose.Schema(
     isActive: { type: Boolean, default: true },
     timeout: { type: Number, default: 30000 },
     retryCount: { type: Number, default: 3 },
+    expectedStatus: { type: Number, default: null },
+    expectedResponseRegex: { type: String, default: null },
     isRunning: { type: Boolean, default: false },
     lastRunAt: { type: Date, default: null },
     nextRunAt: { type: Date, default: null },

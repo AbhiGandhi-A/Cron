@@ -16,6 +16,8 @@ export interface ICronJob extends Document {
   isActive: boolean;
   timeout: number;
   retryCount: number;
+  expectedStatus: number | null;
+  expectedResponseRegex: string | null;
   isRunning: boolean;
   lastRunAt: Date | null;
   nextRunAt: Date | null;
@@ -25,6 +27,7 @@ export interface ICronJob extends Document {
     url: string;
     failureThreshold: number;
     notifyOnRecovery: boolean;
+    notifyEveryExecution: boolean;
   };
   lockedAt: Date | null;
   lockedBy: string | null;
@@ -38,6 +41,7 @@ const NotificationSchema = new Schema(
     url: { type: String, default: "" },
     failureThreshold: { type: Number, default: 1 },
     notifyOnRecovery: { type: Boolean, default: true },
+    notifyEveryExecution: { type: Boolean, default: false },
   },
   { _id: false }
 );
@@ -57,6 +61,8 @@ const CronJobSchema = new Schema<ICronJob>(
     isActive: { type: Boolean, default: true },
     timeout: { type: Number, default: 30000 },
     retryCount: { type: Number, default: 3 },
+    expectedStatus: { type: Number, default: null },
+    expectedResponseRegex: { type: String, default: null },
     isRunning: { type: Boolean, default: false },
     lastRunAt: { type: Date, default: null },
     nextRunAt: { type: Date, default: null, index: true },

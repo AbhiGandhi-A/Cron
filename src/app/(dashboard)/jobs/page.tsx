@@ -53,11 +53,19 @@ export default function JobsPage() {
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [showInspector, setShowInspector] = useState(false);
   const [inspectorResult, setInspectorResult] = useState<ResponseInspectorResult | null>(null);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [enabledFilter, setEnabledFilter] = useState<"all" | "true" | "false">("all");
   const { showToast } = useToast();
 
   const fetchJobs = useCallback(async () => {
     try {
-      const res = await fetch("/api/jobs");
+      const params = new URLSearchParams();
+      const trimmed = debouncedSearch.trim();
+      if (trimmed) params.set("search", trimmed);
+      if (enabledFilter !== "all") params.set("enabled", enabledFilter);
+      const qs = params.toString();
+      const res = await fetch("/api/jobs" + (qs ? "?" + qs : ""));
       const data = await res.json();
       setJobs(data.jobs || []);
     } catch {
@@ -65,13 +73,21 @@ export default function JobsPage() {
     } finally {
       setLoading(false);
     }
-  }, [showToast]);
+  }, [debouncedSearch, enabledFilter, showToast]);
 
   useEffect(() => {
     fetchJobs();
     const interval = setInterval(fetchJobs, 10000);
     return () => clearInterval(interval);
   }, [fetchJobs]);
+
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setDebouncedSearch(search);
+      setLoading(true);
+    }, 350);
+    return () => clearTimeout(handle);
+  }, [search]);
 
   async function handleDelete() {
     if (!deleteId) return;
@@ -172,21 +188,54 @@ export default function JobsPage() {
           <div className="flex justify-center py-20">
             <div className="w-10 h-10 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
           </div>
-        ) : jobs.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
-            <EmptyState
-              title="No cron jobs yet"
-              description="Create your first cron job to start monitoring APIs and endpoints"
-              actionLabel="Create your first job"
-              actionHref="/jobs/new"
-              icon={
-                <svg className="w-20 h-20" fill="none" stroke="currentColor" strokeWidth="0.75" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              }
-            />
-          </div>
         ) : (
+          <>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
+              <div className="relative flex-1 sm:max-w-sm">
+                <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                </svg>
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search jobs by name or URL..."
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all bg-white"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                {([
+                  { id: "all", label: "All" },
+                  { id: "true", label: "Active" },
+                  { id: "false", label: "Inactive" },
+                ] as const).map((f) => (
+                  <button
+                    key={f.id}
+                    onClick={() => { setEnabledFilter(f.id); setLoading(true); }}
+                    className={"px-4 py-2 text-sm font-semibold rounded-xl transition-colors " + (enabledFilter === f.id
+                      ? "bg-brand-600 text-white shadow-sm"
+                      : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50")}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {jobs.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
+                <EmptyState
+                  title={search || enabledFilter !== "all" ? "No jobs match your filters" : "No cron jobs yet"}
+                  description="Adjust your search or create a new job to get started"
+                  actionLabel="Create your first job"
+                  actionHref="/jobs/new"
+                  icon={
+                    <svg className="w-20 h-20" fill="none" stroke="currentColor" strokeWidth="0.75" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  }
+                />
+              </div>
+            ) : (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -297,6 +346,8 @@ export default function JobsPage() {
               </table>
             </div>
           </div>
+            )}
+          </>
         )}
       </div>
 

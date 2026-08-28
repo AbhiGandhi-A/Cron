@@ -31,11 +31,28 @@ export const createJobSchema = z.object({
   isActive: z.boolean().default(true),
   timeout: z.number().int().min(1000).max(300000).default(30000),
   retryCount: z.number().int().min(0).max(10).default(3),
+  expectedStatus: z.number().int().min(100).max(599).optional().nullable(),
+  expectedResponseRegex: z
+    .string()
+    .trim()
+    .max(255)
+    .optional()
+    .nullable()
+    .refine((value) => {
+      if (!value) return true;
+      try {
+        new RegExp(value);
+        return true;
+      } catch {
+        return false;
+      }
+    }, "Invalid response pattern"),
   notifications: z.object({
     enabled: z.boolean().default(false),
     url: z.string().max(2048).default(""),
     failureThreshold: z.number().int().min(1).max(100).default(1),
     notifyOnRecovery: z.boolean().default(true),
+    notifyEveryExecution: z.boolean().default(false),
   }).optional().nullable(),
 }).strict();
 

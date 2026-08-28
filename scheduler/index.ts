@@ -1,7 +1,7 @@
 import "dotenv/config";
-import { createServer } from "http";
 
 import { startScheduler, stopScheduler } from "./scheduler";
+import { healthServerEnabled, startHealthServer, markSchedulerRunning } from "./health";
 import { logger } from "./logger";
 
 let isShuttingDown = false;
@@ -58,35 +58,19 @@ async function main(): Promise<void> {
     throw new Error("MONGODB_URI is not set");
   }
 
-  // Optional health endpoint. OFF by default so it never conflicts with the
-  // Next.js dev server on port 3000. Enable explicitly with:
-  //   SCHEDULER_HEALTH_ENABLED=true (listens on PORT, default 3000)
-  // Render workers do not need this; the MongoDB heartbeat is the liveness
-  // signal shown on the dashboard.
-  if (process.env.SCHEDULER_HEALTH_ENABLED === "true") {
-    const port = parseInt(process.env.PORT || "3000", 10);
-    try {
-      const server = createServer((req, res) => {
-        if (req.url === "/health") {
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ status: "ok", uptime: process.uptime() }));
-        } else {
-          res.writeHead(404);
-          res.end();
-        }
-      });
-      server.listen(port, () => {
-        logger.info("index", "Health server listening on port " + port);
-      });
-      server.on("error", (error) => {
-        logger.warn("index", "Health server failed to bind to port " + port + ": " + error.message);
-      });
-    } catch (error) {
-      logger.warn("index", "Health server skipped due to error: " + (error instanceof Error ? error.message : String(error)));
-    }
+  // Render Web Service ingress: bind a minimal HTTP server to 0.0.0.0:$PORT.
+  // It must be up quickly so Render marks the instance healthy, and it doubles
+  // as the way EasyCron wakes/keeps the free Web Service alive (~10 min).
+  // Automatically ON under Render (RENDER=true); also forceable with
+  // SCHEDULER_HEALTH_ENABLED=true. Routes: GET /health, GET /wake.
+  if (healthServerEnabled()) {
+    startHealthServer();
   }
 
   await startScheduler();
+
+  // /health now reports scheduler: "running".
+  markSchedulerRunning(true);
 }
 
 main().catch(async (error) => {

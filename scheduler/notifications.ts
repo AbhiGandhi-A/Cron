@@ -51,6 +51,7 @@ export async function checkAndNotify(
       url: string;
       failureThreshold: number;
       notifyOnRecovery: boolean;
+      notifyEveryExecution: boolean;
     };
     consecutiveFailures: number;
   },
@@ -68,6 +69,20 @@ export async function checkAndNotify(
   const collection = db.collection("cronjobs");
 
   const isFailed = httpStatus !== null ? httpStatus >= 400 : executionStatus === "FAILED" || executionStatus === "TIMEOUT";
+
+  if (job.notifications.notifyEveryExecution) {
+    await sendNotification({
+      url: job.notifications.url,
+      payload: {
+        event: isFailed ? "cron_job_failed" : "cron_job_executed",
+        jobId: job._id,
+        jobName: job.name,
+        status: httpStatus ?? executionStatus,
+        consecutiveFailures: job.consecutiveFailures + (isFailed ? 1 : 0),
+        timestamp: new Date().toISOString(),
+      },
+    }).catch(() => {});
+  }
 
   if (isFailed) {
     const newCount = job.consecutiveFailures + 1;

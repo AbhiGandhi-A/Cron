@@ -18,6 +18,8 @@ export interface RetryConfig {
   queryParams: Record<string, string> | null;
   timeout: number;
   retryCount: number;
+  expectedStatus?: number | null;
+  expectedResponseRegex?: string | null;
 }
 
 export async function executeWithRetry(
@@ -65,6 +67,8 @@ export async function executeWithRetry(
       bodyType: config.bodyType,
       queryParams: config.queryParams,
       timeout: config.timeout,
+      expectedStatus: config.expectedStatus,
+      expectedResponseRegex: config.expectedResponseRegex,
     });
 
     const sanitizedErrorMessage = result.errorMessage

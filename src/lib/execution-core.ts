@@ -34,6 +34,8 @@ export interface ExecutionRequestConfig {
   bodyType?: BodyType | null;
   queryParams?: Record<string, string> | null;
   timeout: number;
+  expectedStatus?: number | null;
+  expectedResponseRegex?: string | null;
 }
 
 export interface ExecutionResult {
@@ -144,6 +146,35 @@ export function buildExecutionHeaders(
   return resolved;
 }
 
+export function validateResponse(
+  httpStatus: number,
+  responseBody: string,
+  expectedStatus?: number | null,
+  expectedResponseRegex?: string | null
+): string | null {
+  if (expectedStatus != null) {
+    const expected = Number(expectedStatus);
+    if (Number.isInteger(expected) && httpStatus !== expected) {
+      return `Response validation failed: expected HTTP ${expected}, got ${httpStatus}`;
+    }
+  }
+
+  if (expectedResponseRegex && expectedResponseRegex.trim()) {
+    let pattern: RegExp;
+    try {
+      // No flags: cron/web users write body patterns without regex flags.
+      pattern = new RegExp(expectedResponseRegex);
+    } catch {
+      return `Response validation failed: invalid pattern "${expectedResponseRegex}"`;
+    }
+    if (!pattern.test(responseBody)) {
+      return `Response validation failed: body does not match pattern ${expectedResponseRegex}`;
+    }
+  }
+
+  return null;
+}
+
 export async function executeHttpRequest(
   config: ExecutionRequestConfig
 ): Promise<ExecutionResult> {
@@ -226,11 +257,18 @@ export async function executeHttpRequest(
         ? rawBody.substring(0, MAX_RESPONSE_BODY_BYTES)
         : rawBody;
 
+    const validationError = validateResponse(
+      response.status,
+      responseBody,
+      config.expectedStatus,
+      config.expectedResponseRegex
+    );
+
     return {
-      status: response.status < 400 ? "SUCCESS" : "FAILED",
+      status: validationError ? "FAILED" : response.status < 400 ? "SUCCESS" : "FAILED",
       httpStatus: response.status,
       responseTime: Date.now() - startTime,
-      errorMessage: null,
+      errorMessage: validationError,
       responseBody,
       responseHeaders: redactHeaders(responseHeaders),
       responseSize: rawBody.length,

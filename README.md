@@ -102,7 +102,7 @@ The scheduler starts polling the database for due jobs and executing them. Keep 
 
 ## How the Scheduler Works
 
-The scheduler is a **standalone Node.js process** that must run on an **always-on** host (`type: worker` on Render, or a VPS with PM2). It does **not** run on Vercel (Vercel serverless functions have no persistent process, so a polling scheduler there would sleep/throttle):
+The scheduler is a **standalone Node.js process** that runs on a Render free-tier **Web Service** and is woken/kept alive by an **external EasyCron** request roughly every 10 minutes. It does **not** run on Vercel (Vercel serverless functions have no persistent process, so a polling scheduler there would sleep/throttle) and does **not** require browser activity:
 
 1. **Polls the database** every 10 seconds (configurable) for active jobs where `next_run_at <= now` **or** `next_run_at` is null (legacy/first-run jobs)
 2. **Claims the job atomically** via `lockedAt`/`lockedBy` (single `findOneAndUpdate`) — a second worker, the dashboard, and the manual "Run Now" button can never double-execute the same occurrence
@@ -119,7 +119,8 @@ The scheduler is a **standalone Node.js process** that must run on an **always-o
 
 ```
 scheduler/
-├── index.ts             # Entry point: signals, crash-isolation exit, optional health
+├── index.ts             # Entry point: signals, crash-isolation exit, health/wake server
+├── health.ts            # 0.0.0.0:$PORT HTTP server: GET /health, GET /wake (never executes jobs)
 ├── scheduler.ts         # Main loop, atomic claims, heartbeat, catch-up recovery
 ├── worker.ts            # Per-job processing, lock release, nextRunAt advance
 ├── executor.ts          # Re-exports the shared execution engine
@@ -187,21 +188,31 @@ Configured in `scheduler/scheduler.ts`:
 - **Skip missed**: Update `next_run_at` to the next valid time without executing
 - **Run all missed**: Execute all missed intervals sequentially
 
-## 9. Deploying the Scheduler to Render (production)
+## 9. Deploying the Scheduler to Render as a Web Service (production)
 
-Host the Next.js app on Vercel, and the scheduler on Render as a **worker** service (free tier included):
+Host the Next.js app on Vercel, and the scheduler on Render as a **free-tier Web Service** that is woken/kept alive by an **EasyCron** HTTP request every ~10 minutes. This is intentional (not a paid Background Worker) — Render free Web Services sleep after ~15 min of no inbound traffic, and EasyCron keeps the scheduler woken:
 
-1. Create a `render.yaml`-based Blueprint (included in this repo) or a manual "Background Worker":
-   - **Type**: Background Worker (NOT "Web Service") — web services sleep after ~15 min of no inbound traffic, which silently kills a polling scheduler
+```
+USER CREATES JOB → VERCEL (saves to MongoDB) → MONGODB ATLAS →
+EASYCRON (GET /api/wake-render every ~10 min on VERCEL) → VERCEL wake relay →
+GET https://<YOUR-RENDER-URL>/health → RENDER SCHEDULER →
+MONGODB POLL → JOB EXECUTES → EXECUTION SAVED → nextRunAt ADVANCES → NEXT EXECUTION
+```
+
+Why the relay? EasyCron's free tier blocks `*.onrender.com` targets. So EasyCron instead calls the Vercel endpoint **`GET /api/wake-render`**, which performs a fixed, token-protected server-to-server `fetch` to the Render `/health` route. EasyCron and Vercel only generate inbound traffic — they never execute jobs. The Render scheduler decides what is due from MongoDB.
+
+1. Create a `render.yaml`-based Blueprint (included in this repo) or a manual **Web Service**:
+   - **Type**: Web Service (free tier) — NOT a paid Background Worker
    - **Build command**: `npm install` (must keep dev dependencies so `tsx` is available)
-   - **Start command**: `npm run scheduler`
+   - **Start command**: `npm run scheduler` — the same long-running process (a) runs the Mongo scheduler loop and (b) binds `0.0.0.0:$PORT` serving `GET /health` and `GET /wake`
    - **Runtime**: Node
-2. Set the same env vars on both Vercel and Render (Render: `MONGODB_URI`, `NEXTAUTH_URL`, `NEXT_PUBLIC_APP_URL`, `NEXTAUTH_SECRET`, `RATELIMIT_SECRET`, `CSRF_SECRET`, `HEADER_ENCRYPTION_KEY`, `SCHEDULER_API_TOKEN`). Keys used to encrypt job headers must match across hosts.
-3. Deploy. The Render worker connects to the **same MongoDB** as Vercel — no network link between them is needed.
-4. Expected logs on Render: `[INFO] [scheduler] Connecting to MongoDB...`, `Worker started (id=..., host=..., pid=...)`, `Scheduler loop started`, then per-cycle `Found N due job(s)` and `Job <id> completed: SUCCESS (HTTP 200 ...)`.
-5. Verify liveness on the dashboard ("Scheduler" status must show ONLINE) or via `GET /api/scheduler`.
+2. Set the same env vars on both Vercel and Render (Render: `MONGODB_URI`, `NEXTAUTH_URL`, `NEXT_PUBLIC_APP_URL`, `NEXTAUTH_SECRET`, `RATELIMIT_SECRET`, `CSRF_SECRET`, `HEADER_ENCRYPTION_KEY`, `SCHEDULER_API_TOKEN`). Keys used to encrypt job headers must match across hosts (`MONGODB_URI` and `HEADER_ENCRYPTION_KEY` must MATCH between Vercel and Render).
+3. Deploy. The Render Web Service connects to the **same MongoDB** as Vercel — no network link between them is needed.
+4. Create an **EasyCron** job (or any external uptime cron) calling **`https://<YOUR-VERCEL-DOMAIN>/api/wake-render`** every **~10 minutes** (comfortably under the ~15-min free-tier idle timeout). If EasyCron supports custom headers it should send `Authorization: Bearer <RENDER_WAKE_TOKEN>`; otherwise append `?token=<RENDER_WAKE_TOKEN>`. Set `RENDER_WAKE_TOKEN` (secret) and `RENDER_WAKE_URL=https://<YOUR-RENDER-DOMAIN>/health` on Vercel. The relay only fetches the fixed Render `/health` URL (never an arbitrary target), returns quickly even when Render is cold-starting, and **never executes cron jobs** — it only generates the inbound traffic that wakes/keeps the process alive.
+5. Expected logs on Render: `[INFO] [scheduler] Connecting to MongoDB...`, `Worker started (id=..., host=..., pid=...)`, `Health/wake server listening on 0.0.0.0:<port>`, `Scheduler loop started`, then per-cycle `Found N due job(s)` and `Job <id> completed: SUCCESS (HTTP 200 ...)`.
+6. Verify liveness on the dashboard ("Scheduler" status must show ONLINE) or via `GET /api/scheduler`.
 
-> Workers don't need a health endpoint (no inbound traffic). The MongoDB heartbeat is the liveness signal. If you want an external uptime probe, set `SCHEDULER_HEALTH_ENABLED=true` (listens on `PORT`, default 3000 — change it to avoid conflicts).
+> Accurate terminology: a Render **free** Web Service is **kept active/woken by an external EasyCron HTTP request approximately every 10 minutes** — it is not "always-on". If the instance genuinely sleeps between wake-ups, scheduled execution cannot be guaranteed during that sleeping window; on wake, the scheduler detects overdue `nextRunAt` jobs and applies the catch-up policy (item 8), so it never floods duplicates.
 
 ### Process management with PM2 (VPS alternative)
 
@@ -295,6 +306,7 @@ cron-job-saas/
 | POST | `/api/jobs/[id]/trigger` | Manually run job |
 | GET | `/api/jobs/[id]/history` | Get execution history |
 | GET | `/api/scheduler` | Scheduler health status |
+| GET | `/api/wake-render` | Vercel→Render wake relay (token-protected, fixed URL) |
 
 ## License
 

@@ -108,6 +108,8 @@ export async function processJob(jobId: string, isCatchUp = false): Promise<void
       queryParams: job.queryParams || null,
       timeout: job.timeout,
       retryCount: job.retryCount,
+      expectedStatus: job.expectedStatus ?? null,
+      expectedResponseRegex: job.expectedResponseRegex ?? null,
     });
 
     const status = result.status;

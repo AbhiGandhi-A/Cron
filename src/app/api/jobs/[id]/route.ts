@@ -143,6 +143,8 @@ export async function PUT(
     if (data.notifications !== undefined) updateData.notifications = data.notifications || undefined;
     if (data.timeout !== undefined) updateData.timeout = data.timeout;
     if (data.retryCount !== undefined) updateData.retryCount = data.retryCount;
+    if (data.expectedStatus !== undefined) updateData.expectedStatus = data.expectedStatus ?? null;
+    if (data.expectedResponseRegex !== undefined) updateData.expectedResponseRegex = data.expectedResponseRegex ?? null;
 
     const job = await CronJob.findByIdAndUpdate(id, updateData, {
       new: true,

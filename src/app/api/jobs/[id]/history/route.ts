@@ -40,13 +40,37 @@ export async function GET(
     const { searchParams } = new URL(req.url);
     const { page, limit, skip } = validatePaginationParams(searchParams);
 
+    const filter = (searchParams.get("filter") || "all").toLowerCase();
+
+    const query: Record<string, unknown> = { jobId: id };
+    switch (filter) {
+      case "success":
+        query.status = "SUCCESS";
+        break;
+      case "failed":
+        query.status = "FAILED";
+        break;
+      case "timeout":
+        query.status = "TIMEOUT";
+        break;
+      case "4xx":
+        query.httpStatus = { $gte: 400, $lt: 500 };
+        break;
+      case "5xx":
+        query.httpStatus = { $gte: 500 };
+        break;
+      case "all":
+      default:
+        break;
+    }
+
     const [executions, total] = await Promise.all([
-      JobExecution.find({ jobId: id })
+      JobExecution.find(query)
         .sort({ startedAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
-      JobExecution.countDocuments({ jobId: id }),
+      JobExecution.countDocuments(query),
     ]);
 
     return NextResponse.json({

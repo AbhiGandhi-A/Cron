@@ -27,6 +27,8 @@ async function executeWithRetry(
     queryParams: Record<string, string> | null;
     timeout: number;
     retryCount: number;
+    expectedStatus: number | null;
+    expectedResponseRegex: string | null;
     timezone: string;
     schedule: string;
   },
@@ -54,6 +56,8 @@ async function executeWithRetry(
     bodyType: job.bodyType,
     queryParams: job.queryParams,
     timeout: job.timeout,
+    expectedStatus: job.expectedStatus,
+    expectedResponseRegex: job.expectedResponseRegex,
   });
 
   const status = result.status;
@@ -170,6 +174,8 @@ export async function POST(
       queryParams: lock.queryParams || null,
       timeout: lock.timeout,
       retryCount: lock.retryCount,
+      expectedStatus: lock.expectedStatus ?? null,
+      expectedResponseRegex: lock.expectedResponseRegex ?? null,
       timezone: lock.timezone || "UTC",
       schedule: lock.schedule,
     });

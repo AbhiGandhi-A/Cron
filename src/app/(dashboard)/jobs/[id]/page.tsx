@@ -5,8 +5,9 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import DashboardLayout from "@/components/DashboardLayout";
 import StatusBadge from "@/components/StatusBadge";
+import ResponseInspector from "@/components/ResponseInspector";
 import { useToast } from "@/components/Toast";
-import { formatDate, formatDuration, maskHeaders, getHttpStatusColor } from "@/lib/utils";
+import { formatDate, formatDuration, maskHeaders, getHttpStatusColor, formatRelativeTime } from "@/lib/utils";
 
 interface Job {
   _id: string;
@@ -16,9 +17,12 @@ interface Job {
   headers: Record<string, string> | null;
   body: unknown;
   schedule: string;
+  timezone?: string;
   isActive: boolean;
   timeout: number;
   retryCount: number;
+  expectedStatus?: number | null;
+  expectedResponseRegex?: string | null;
   lastRunAt: string | null;
   nextRunAt: string | null;
   isRunning: boolean;
@@ -35,6 +39,38 @@ interface Job {
   }>;
 }
 
+interface JobStats {
+  totalExecutions: number;
+  totalFinished: number;
+  success: number;
+  failed: number;
+  timeouts: number;
+  retries: number;
+  successRate: number | null;
+  avgResponseTime: number | null;
+  lastExecutionAt: string | null;
+  lastSuccessAt: string | null;
+  lastFailureAt: string | null;
+  consecutiveFailures: number;
+}
+
+interface InspectorResult {
+  status: string;
+  httpStatus: number | null;
+  responseTime: number | null;
+  errorMessage: string | null;
+  responseBody: string | null;
+  responseHeaders?: Record<string, string> | null;
+  responseSize?: number;
+  requestUrl?: string;
+  requestMethod?: string;
+  requestHeaders?: Record<string, string> | null;
+  queryParams?: Record<string, string> | null;
+  requestBody?: unknown;
+  startedAt?: string;
+  completedAt?: string;
+}
+
 function getScheduleLabel(schedule: string): string {
   const map: Record<string, string> = {
     "* * * * *": "Every 1 min",
@@ -47,6 +83,20 @@ function getScheduleLabel(schedule: string): string {
   return map[schedule] || schedule;
 }
 
+function formatInTimezone(iso: string, timezone: string): string {
+  try {
+    return new Date(iso).toLocaleString("en-US", {
+      timeZone: timezone,
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return formatDate(iso);
+  }
+}
+
 export default function JobDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -54,6 +104,10 @@ export default function JobDetailPage() {
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
   const [triggering, setTriggering] = useState(false);
+  const [stats, setStats] = useState<JobStats | null>(null);
+  const [upcoming, setUpcoming] = useState<string[]>([]);
+  const [showInspector, setShowInspector] = useState(false);
+  const [inspectorResult, setInspectorResult] = useState<InspectorResult | null>(null);
 
   const fetchJob = useCallback(async () => {
     try {
@@ -64,7 +118,34 @@ export default function JobDetailPage() {
         return;
       }
       const data = await res.json();
-      setJob(data.job);
+      const job: Job = data.job;
+      setJob(job);
+
+      try {
+        const statsRes = await fetch("/api/jobs/" + params.id + "/stats");
+        if (statsRes.ok) {
+          const statsData = await statsRes.json();
+          setStats(statsData.stats);
+        }
+      } catch {
+        // stats are best effort
+      }
+
+      const timezone = job.timezone || "UTC";
+      try {
+        const previewParams = new URLSearchParams({
+          schedule: job.schedule,
+          timezone,
+          count: "5",
+        });
+        const previewRes = await fetch("/api/jobs/preview?" + previewParams.toString());
+        if (previewRes.ok) {
+          const previewData = await previewRes.json();
+          setUpcoming((previewData.upcoming || []).slice(0, 5));
+        }
+      } catch {
+        // preview is best effort
+      }
     } catch {
       showToast("Failed to load job", "error");
     } finally {
@@ -81,6 +162,8 @@ export default function JobDetailPage() {
       const data = await res.json();
       if (res.ok) {
         showToast("Executed: " + (data.execution.httpStatus || data.execution.status), data.execution.status === "SUCCESS" ? "success" : "error");
+        setInspectorResult(data.execution);
+        setShowInspector(true);
         fetchJob();
       } else {
         showToast(data.error || "Trigger failed", "error");
@@ -137,14 +220,69 @@ export default function JobDetailPage() {
           </div>
         </div>
 
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Total Runs</p>
+            <p className="text-2xl font-bold text-gray-900">{stats ? stats.totalExecutions : "-"}</p>
+          </div>
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Success</p>
+            <p className="text-2xl font-bold text-emerald-600">{stats ? stats.success : "-"}</p>
+            <p className="text-xs text-gray-400 mt-1">
+              {stats && stats.successRate != null ? stats.successRate + "% rate" : "no finished runs"}
+            </p>
+          </div>
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Failed</p>
+            <p className="text-2xl font-bold text-red-600">{stats ? stats.failed : "-"}</p>
+            <p className="text-xs text-gray-400 mt-1">
+              {stats && stats.timeouts ? stats.timeouts + " timeouts" : ""}
+            </p>
+          </div>
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Avg Response</p>
+            <p className="text-2xl font-bold text-gray-900">
+              {stats && stats.avgResponseTime != null ? formatDuration(stats.avgResponseTime) : "-"}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              {stats && stats.consecutiveFailures > 0 ? "consecutive failures: " + stats.consecutiveFailures : "last success " + (stats?.lastSuccessAt ? formatRelativeTime(stats.lastSuccessAt) : "never")}
+            </p>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-8">
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Schedule</p>
-            <p className="font-mono text-sm font-semibold text-gray-900 mb-3">{getScheduleLabel(job.schedule)}</p>
+            <p className="font-mono text-sm font-semibold text-gray-900 mb-2">{getScheduleLabel(job.schedule)}</p>
+            <p className="font-mono text-xs text-gray-400 mb-3">{job.schedule}</p>
             <div className="space-y-1">
+              <p className="text-xs text-gray-400">Timezone: <span className="text-gray-600">{job.timezone || "UTC"}</span></p>
               <p className="text-xs text-gray-400">Last run: <span className="text-gray-600">{job.lastRunAt ? formatDate(job.lastRunAt) : "Never"}</span></p>
               <p className="text-xs text-gray-400">Next run: <span className="text-gray-600">{job.nextRunAt ? formatDate(job.nextRunAt) : "N/A"}</span></p>
             </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Upcoming Runs</p>
+            {job.isActive ? (
+              upcoming.length > 0 ? (
+                <ol className="space-y-1.5">
+                  {upcoming.map((run, i) => (
+                    <li key={run + i} className="flex items-center gap-2 text-sm">
+                      <span className={"inline-block h-1.5 w-1.5 rounded-full " + (i === 0 ? "bg-brand-600" : "bg-gray-300")} />
+                      <span className={"font-mono font-medium " + (i === 0 ? "text-gray-900" : "text-gray-500")}>
+                        {formatInTimezone(run, job.timezone || "UTC")}
+                      </span>
+                      {i === 0 && <span className="text-[10px] font-semibold text-brand-600 uppercase tracking-wider">Next</span>}
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="text-xs text-gray-400">Schedule preview unavailable.</p>
+              )
+            ) : (
+              <p className="text-xs text-gray-400">Job is inactive — no upcoming runs.</p>
+            )}
           </div>
 
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
@@ -153,21 +291,27 @@ export default function JobDetailPage() {
               <p className="text-gray-400">Timeout: <span className="text-gray-600 font-mono">{job.timeout}ms</span></p>
               <p className="text-gray-400">Retries: <span className="text-gray-600 font-mono">{job.retryCount}</span></p>
               <p className="text-gray-400">Created: <span className="text-gray-600 font-mono">{formatDate(job.createdAt)}</span></p>
+              <p className="text-gray-400">
+                Validation:{" "}
+                <span className="text-gray-600">
+                  {(job.expectedStatus != null || job.expectedResponseRegex) ? "Custom checks enabled" : "HTTP default"}
+                </span>
+              </p>
             </div>
           </div>
+        </div>
 
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Headers</p>
-            {job.headers ? (
-              <div className="font-mono text-xs text-gray-600 space-y-0.5">
-                {Object.entries(maskHeaders(job.headers)).map(([k, v]) => (
-                  <p key={k}><span className="text-gray-400">{k}:</span> {v}</p>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-gray-300">No headers configured</p>
-            )}
-          </div>
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-8">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Headers</p>
+          {job.headers ? (
+            <div className="font-mono text-xs text-gray-600 space-y-0.5">
+              {Object.entries(maskHeaders(job.headers)).map(([k, v]) => (
+                <p key={k}><span className="text-gray-400">{k}:</span> {v}</p>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-gray-300">No headers configured</p>
+          )}
         </div>
 
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -211,6 +355,12 @@ export default function JobDetailPage() {
           )}
         </div>
       </div>
+
+      <ResponseInspector
+        open={showInspector}
+        onClose={() => setShowInspector(false)}
+        result={inspectorResult}
+      />
     </DashboardLayout>
   );
 }

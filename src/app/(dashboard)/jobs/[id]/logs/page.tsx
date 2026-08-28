@@ -77,7 +77,10 @@ export default function LogsPage() {
 
   const fetchLogs = useCallback(async () => {
     try {
-      const res = await fetch("/api/jobs/" + params.id + "/history?page=" + page + "&limit=50");
+      const filterParam = mapFilter(activeFilter);
+      const res = await fetch(
+        "/api/jobs/" + params.id + "/history?page=" + page + "&limit=50&filter=" + filterParam
+      );
       if (!res.ok) {
         showToast("Failed to load logs", "error");
         router.push("/jobs");
@@ -98,7 +101,7 @@ export default function LogsPage() {
     } finally {
       setLoading(false);
     }
-  }, [params.id, page, showToast, router]);
+  }, [params.id, page, activeFilter, showToast, router]);
 
   useEffect(() => {
     fetchLogs();
@@ -125,19 +128,16 @@ export default function LogsPage() {
     }
   }
 
-  function getFilteredExecutions(): Execution[] {
-    if (activeFilter === "All") return executions;
-    return executions.filter((e) => {
-      switch (activeFilter) {
-        case "Successful": return e.status === "SUCCESS";
-        case "Failed": return e.status === "FAILED";
-        case "4xx": return e.httpStatus !== null && e.httpStatus >= 400 && e.httpStatus < 500;
-        case "5xx": return e.httpStatus !== null && e.httpStatus >= 500;
-        case "Timeout": return e.status === "TIMEOUT";
-        default: return true;
-      }
-    });
+  function mapFilter(filter: Filter): string {
+  switch (filter) {
+    case "Successful": return "success";
+    case "Failed": return "failed";
+    case "4xx": return "4xx";
+    case "5xx": return "5xx";
+    case "Timeout": return "timeout";
+    default: return "all";
   }
+}
 
   function getStatusIcon(status: string): React.ReactNode {
     if (status === "SUCCESS") {
@@ -198,7 +198,7 @@ export default function LogsPage() {
     }
   }
 
-  const filteredExecutions = getFilteredExecutions();
+  const filteredExecutions = executions;
 
   return (
     <DashboardLayout>
@@ -232,34 +232,23 @@ export default function LogsPage() {
 
         {!loading && (
           <div className="flex items-center gap-2 mb-6 flex-wrap">
-            {FILTERS.map((filter) => {
-              const count = filter === "All" ? total : executions.filter((e) => {
-                switch (filter) {
-                  case "Successful": return e.status === "SUCCESS";
-                  case "Failed": return e.status === "FAILED";
-                  case "4xx": return e.httpStatus !== null && e.httpStatus >= 400 && e.httpStatus < 500;
-                  case "5xx": return e.httpStatus !== null && e.httpStatus >= 500;
-                  case "Timeout": return e.status === "TIMEOUT";
-                  default: return false;
-                }
-              }).length;
-              return (
-                <button
-                  key={filter}
-                  onClick={() => { setActiveFilter(filter); setExpandedId(null); setDetail(null); }}
-                  className={`px-4 py-2 text-sm font-semibold rounded-xl transition-colors ${
-                    activeFilter === filter
-                      ? "bg-brand-600 text-white shadow-sm"
-                      : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
-                  }`}
-                >
-                  {filter}
-                  <span className={`ml-1.5 text-xs ${activeFilter === filter ? "text-white/70" : "text-gray-400"}`}>
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
+            {FILTERS.map((filter) => (
+              <button
+                key={filter}
+                onClick={() => { setActiveFilter(filter); setPage(1); setExpandedId(null); setDetail(null); setLoading(true); }}
+                className={`px-4 py-2 text-sm font-semibold rounded-xl transition-colors ${
+                  activeFilter === filter
+                    ? "bg-brand-600 text-white shadow-sm"
+                    : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
+                }`}
+              >
+                {filter}
+                {activeFilter === filter && (
+                  <span className="ml-1.5 text-xs text-white/70">{total}</span>
+                )}
+              </button>
+            ))}
+            <p className="text-xs text-gray-400 ml-auto">Server-filtered — only the active view is queried</p>
           </div>
         )}
 
