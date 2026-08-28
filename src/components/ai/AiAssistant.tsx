@@ -701,9 +701,11 @@ function IssueDetail(props: {
                 Copy fix
               </button>
             )}
-            <button onClick={props.onAnalyzeNow} disabled={props.busy || issue.id.startsWith("local-")} className="text-[11px] font-semibold text-gray-600 hover:text-gray-900 disabled:opacity-50">
-              {analysis && !analysis.available ? "Retry analysis" : "Analyze now"}
-            </button>
+            {!analysis?.available && (
+              <button onClick={props.onAnalyzeNow} disabled={props.busy || issue.id.startsWith("local-")} className="text-[11px] font-semibold text-brand-600 hover:text-brand-700 disabled:opacity-50">
+                Analyze it
+              </button>
+            )}
           </div>
         </div>
         <div className="p-3">
