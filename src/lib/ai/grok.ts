@@ -7,7 +7,7 @@ export function resolveReasoningModel(): string {
 }
 
 export function resolveResearchModel(): string {
-  return process.env.GROQ_RESEARCH_MODEL || process.env.GROQ_MODEL || DEFAULT_GROK_MODEL;
+  return process.env.GROQ_RESEARCH_MODEL || process.env.GROQ_MODEL || DEFAULT_RESEARCH_MODEL;
 }
 
 export class GrokUnavailableError extends Error {
