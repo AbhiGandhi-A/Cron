@@ -11,6 +11,10 @@ const DISPATCH_OPEN = "cronjobio:ai:open";
 
 let initialized = false;
 
+function isAiEndpoint(url: string | null | undefined): boolean {
+  return typeof url === "string" && url.includes("/api/ai/");
+}
+
 export function isBrowser(): boolean {
   return typeof window !== "undefined";
 }
@@ -144,6 +148,7 @@ function notifyFetchFailure(input: {
   headers?: Record<string, string>;
   durationMs: number;
 }): void {
+  if (isAiEndpoint(input.url)) return;
   captureError({
     title: input.status !== null ? `HTTP ${input.status}` : "Network request failed",
     message: input.status !== null ? `Request to ${input.url} failed with HTTP ${input.status}` : `Network error while requesting ${input.url}`,
@@ -162,7 +167,8 @@ function notifyFetchFailure(input: {
   });
 }
 
-function notifyPerf(op: string, endpoint: string | null, durationMs: number): void {
+function notifyPerf(op: string, endpoint: string | null | undefined, durationMs: number): void {
+  if (isAiEndpoint(endpoint)) return;
   const settings = getAiSettings();
   if (durationMs < settings.normalMs) return;
   const threshold = durationMs >= settings.warningMs ? "critical" : "warning";
