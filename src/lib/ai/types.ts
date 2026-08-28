@@ -12,6 +12,9 @@ export interface AiAnalysis {
   prevention: string | null;
   references: string[];
   raw: Record<string, unknown> | null;
+  reasoningModel?: string | null;
+  researchModel?: string | null;
+  researchUsed?: boolean;
 }
 
 export interface AiConversationMessage {

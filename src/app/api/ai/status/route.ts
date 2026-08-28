@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { enforceRateLimit, getAuthenticatedIdentifier, logError } from "@/lib/security";
-import { isGrokConfigured, DEFAULT_GROK_MODEL } from "@/lib/ai/grok";
+import { isGrokConfigured, resolveReasoningModel, resolveResearchModel } from "@/lib/ai/grok";
 
 export async function GET(_req: Request) {
   try {
@@ -15,9 +15,12 @@ export async function GET(_req: Request) {
     const limited = enforceRateLimit(`ai:status:${getAuthenticatedIdentifier(userId)}`, 60, 60_000);
     if (limited) return limited;
 
+    const reasoningModel = resolveReasoningModel();
     return NextResponse.json({
       provider: "Groq",
-      model: process.env.GROK_MODEL || DEFAULT_GROK_MODEL,
+      model: reasoningModel,
+      reasoningModel,
+      researchModel: resolveResearchModel(),
       configured: isGrokConfigured(),
       analysisEnabled: process.env.AI_ANALYSIS_ENABLED !== "false",
     });

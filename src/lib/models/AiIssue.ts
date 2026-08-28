@@ -67,6 +67,9 @@ const AnalysisSchema = new Schema<AiAnalysis>(
     prevention: { type: String, default: null },
     references: { type: [String], default: [] },
     raw: { type: Schema.Types.Mixed, default: null },
+    reasoningModel: { type: String, default: null },
+    researchModel: { type: String, default: null },
+    researchUsed: { type: Boolean, default: false },
   },
   { _id: false }
 );

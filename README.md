@@ -250,10 +250,18 @@ A passive monitoring + analysis layer powered by Groq (OpenAI-compatible API, AI
 Add to `.env` (server-side only, never sent to the browser):
 
 ```env
-GROK_API_KEY="gsk_your-groq-key"
-GROK_MODEL="llama-3.3-70b-versatile"
+GROQ_API_KEY="gsk_your-groq-key"
+GROQ_REASONING_MODEL="openai/gpt-oss-120b"
+GROQ_RESEARCH_MODEL="groq/compound"
 AI_ANALYSIS_ENABLED="true"
 ```
+
+Two Groq models are routed automatically:
+
+- **Reasoning model** (`GROQ_REASONING_MODEL`, default `openai/gpt-oss-120b`) — used for error/root-cause analysis, code-fix reasoning, follow-up chat, and generated-API configuration (always with Zod + security validation).
+- **Research model** (`GROQ_RESEARCH_MODEL`, default `groq/compound`) — only invoked when a problem may depend on current documentation/deprecations/migrations (e.g. prompts containing *latest / current / deprecated / migration / new version / docs*). Its brief is fed back to the reasoning model for the final diagnosis. If research fails, analysis continues with the reasoning model alone.
+
+Both models use the same endpoint (`POST https://api.groq.com/openai/v1/chat/completions`) and the same server-side `GROQ_API_KEY` (`Authorization: Bearer ${GROQ_API_KEY}`). `GROQ_MODEL` remains honored as a fallback for either role. No AI failure ever blocks the main app.
 
 Without a key, everything still runs: issues are captured and stored, and every AI action returns a friendly "AI is not configured" message instead of crashing.
 

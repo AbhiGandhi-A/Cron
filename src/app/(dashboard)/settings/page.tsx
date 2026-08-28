@@ -13,6 +13,8 @@ import {
 interface AiStatus {
   configured: boolean;
   model: string | null;
+  reasoningModel?: string | null;
+  researchModel?: string | null;
   analysisEnabled: boolean;
 }
 
@@ -116,11 +118,12 @@ export default function SettingsPage() {
               <div>
                 <h2 className="text-base font-bold text-gray-900">AI Dev Assistant</h2>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  Model: {aiStatus?.model ?? (aiStatus === null ? "checking..." : "not configured")}{" "}
+                  Reasoning: {aiStatus?.reasoningModel ?? aiStatus?.model ?? (aiStatus === null ? "checking..." : "not configured")}
+                  {" · "}Research: {aiStatus?.researchModel ?? (aiStatus === null ? "checking..." : "not configured")}{" "}
                   {aiStatus?.configured ? (
                     <span className="text-emerald-600 font-semibold">· Configured</span>
                   ) : aiStatus ? (
-                    <span className="text-amber-600 font-semibold">· Add GROK_API_KEY to enable</span>
+                    <span className="text-amber-600 font-semibold">· Add GROQ_API_KEY to enable</span>
                   ) : null}
                 </p>
               </div>

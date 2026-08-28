@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { enforceRateLimit, getAuthenticatedIdentifier, logError, readJsonBody, sanitizeForLog } from "@/lib/security";
 import connectDb from "@/lib/mongodb";
-import { callGrokJson, isGrokConfigured, GrokUnavailableError, GrokTimeoutError, GrokHttpError, GrokMalformedError } from "@/lib/ai/grok";
+import { callGrokJson, isGrokConfigured, resolveReasoningModel, GrokUnavailableError, GrokTimeoutError, GrokHttpError, GrokMalformedError } from "@/lib/ai/grok";
 import { buildCreateApiSystemPrompt, buildCreateApiPrompt } from "@/lib/ai/prompts";
 import { generateApiInputSchema } from "@/lib/ai/validate";
 import { createGeneratedApi, serializeGeneratedApi } from "@/lib/generated-apis/service";
@@ -25,7 +25,7 @@ export async function POST(req: Request) {
 
     if (!isGrokConfigured()) {
       return NextResponse.json(
-        { error: "AI is not configured. Set GROK_API_KEY in the environment to generate APIs." },
+        { error: "AI is not configured. Set GROQ_API_KEY in the environment to generate APIs." },
         { status: 503 }
       );
     }
@@ -62,11 +62,11 @@ export async function POST(req: Request) {
           { role: "system", content: buildCreateApiSystemPrompt() },
           { role: "user", content: buildCreateApiPrompt(description.trim()) },
         ],
-        { timeoutMs: 45_000, maxTokens: 1600 }
+        { timeoutMs: 45_000, maxTokens: 1600, model: resolveReasoningModel() }
       );
     } catch (error) {
       if (error instanceof GrokUnavailableError) {
-        return NextResponse.json({ error: "AI is not configured. Set GROK_API_KEY in the environment." }, { status: 503 });
+        return NextResponse.json({ error: "AI is not configured. Set GROQ_API_KEY in the environment." }, { status: 503 });
       }
       if (error instanceof GrokTimeoutError || error instanceof GrokHttpError || error instanceof GrokMalformedError) {
         return NextResponse.json({ error: "The AI could not generate a valid API configuration. Please try again." }, { status: 502 });

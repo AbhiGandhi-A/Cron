@@ -5,7 +5,8 @@ import { enforceRateLimit, getAuthenticatedIdentifier, logError, validateObjectI
 import connectDb from "@/lib/mongodb";
 import { AiIssue, AiConversation } from "@/lib/models";
 import { chatInputSchema } from "@/lib/ai/validate";
-import { callGrok, GrokUnavailableError, grokErrorMessage } from "@/lib/ai/grok";
+import { callGrok, GrokUnavailableError, grokErrorMessage, resolveReasoningModel } from "@/lib/ai/grok";
+import { runWebResearch, shouldUseResearch } from "@/lib/ai/router";
 import { buildChatSystemPrompt, buildChatPrompt, buildIssueTextForChat } from "@/lib/ai/prompts";
 import { serializeIssue } from "@/lib/ai/issues";
 import type { NormalizedErrorInput } from "@/lib/ai/types";
@@ -72,8 +73,20 @@ export async function POST(req: Request) {
       issueText = buildIssueTextForChat(normalized);
     }
 
+    const researchTopics: string[] = [];
+    if (shouldUseResearch({ question: message, ...(issue ? { title: issue.title, message: issue.message } : {}) })) {
+      const topic = issue ? `${issue.title} — ${issue.message}` : message;
+      const summary = await runWebResearch(topic);
+      if (summary) researchTopics.push(summary);
+    }
+
+    let systemPrompt = buildChatSystemPrompt();
+    if (researchTopics.length) {
+      systemPrompt = `${systemPrompt}\n\nWEB RESEARCH BRIEF (from the web-research analyst; reconcile it with the provided context):\n${researchTopics.join("\n---\n")}`;
+    }
+
     const messages = [
-      { role: "system" as const, content: buildChatSystemPrompt() },
+      { role: "system" as const, content: systemPrompt },
       { role: "user" as const, content: buildChatPrompt(issueText, history) },
       { role: "user" as const, content: message },
     ];
@@ -81,7 +94,7 @@ export async function POST(req: Request) {
     let reply: string;
     let aiAvailable = true;
     try {
-      reply = await callGrok(messages, { timeoutMs: 30_000, maxTokens: 900 });
+      reply = await callGrok(messages, { model: resolveReasoningModel(), timeoutMs: 30_000, maxTokens: 900 });
     } catch (error) {
       aiAvailable = false;
       reply =

@@ -137,7 +137,7 @@ export default function DashboardPage() {
                   <div className="flex items-center gap-3">
                     {!aiData.configured && aiData.openIssues === 0 && (
                       <span className="text-[11px] font-medium text-gray-400">
-                        AI analysis not configured (add GROK_API_KEY to enable)
+                        AI analysis not configured (add GROQ_API_KEY to enable)
                       </span>
                     )}
                     <button

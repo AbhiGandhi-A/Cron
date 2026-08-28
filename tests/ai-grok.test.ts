@@ -1,4 +1,4 @@
-import { test } from "node:test";
+﻿import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   callGrok,
@@ -65,8 +65,8 @@ function fakeTransport(response: () => {
   return () => calls;
 }
 
-test("callGrok throws GrokUnavailableError when GROK_API_KEY is unset", async () => {
-  withEnv("GROK_API_KEY", undefined, () => {
+test("callGrok throws GrokUnavailableError when GROQ_API_KEY is unset", async () => {
+  withEnv("GROQ_API_KEY", undefined, () => {
     assert.equal(isGrokConfigured(), false);
     assert.rejects(() => callGrok([{ role: "user", content: "hi" }]), (error) => {
       assert.ok(error instanceof GrokUnavailableError);
@@ -76,7 +76,7 @@ test("callGrok throws GrokUnavailableError when GROK_API_KEY is unset", async ()
 });
 
 test("callGrok returns content and sends the configured key, model and JSON mode", async () => {
-  withEnv("GROK_API_KEY", "test-key", () => {
+  withEnv("GROQ_API_KEY", "test-key", () => {
     const calls = fakeTransport(() => ({
       ok: true,
       status: 200,
@@ -98,9 +98,9 @@ test("callGrok returns content and sends the configured key, model and JSON mode
   });
 });
 
-test("callGrok honors GROK_MODEL override", async () => {
-  withEnv("GROK_API_KEY", "k", () => {
-    withEnv("GROK_MODEL", "grok-4-turbo", () => {
+test("callGrok honors GROQ_MODEL override", async () => {
+  withEnv("GROQ_API_KEY", "k", () => {
+    withEnv("GROQ_MODEL", "grok-4-turbo", () => {
       const calls = fakeTransport(() => ({
         ok: true,
         status: 200,
@@ -114,7 +114,7 @@ test("callGrok honors GROK_MODEL override", async () => {
 });
 
 test("callGrok throws GrokHttpError with status on non-ok responses", async () => {
-  withEnv("GROK_API_KEY", "k", () => {
+  withEnv("GROQ_API_KEY", "k", () => {
     fakeTransport(() => ({ ok: false, status: 429, body: "rate limited" }));
     return callGrok([{ role: "user", content: "hi" }]).then(
       () => Promise.reject(new Error("should have thrown")),
@@ -127,7 +127,7 @@ test("callGrok throws GrokHttpError with status on non-ok responses", async () =
 });
 
 test("callGrok throws GrokMalformedError when JSON is not an object or content is empty", async () => {
-  withEnv("GROK_API_KEY", "k", () => {
+  withEnv("GROQ_API_KEY", "k", () => {
     fakeTransport(() => ({
       ok: true,
       status: 200,
@@ -138,7 +138,7 @@ test("callGrok throws GrokMalformedError when JSON is not an object or content i
 });
 
 test("callGrok maps aborts to GrokTimeoutError", async () => {
-  withEnv("GROK_API_KEY", "k", () => {
+  withEnv("GROQ_API_KEY", "k", () => {
     setGrokTransport(async () => {
       const error = new Error("aborted");
       error.name = "AbortError";
@@ -149,7 +149,7 @@ test("callGrok maps aborts to GrokTimeoutError", async () => {
 });
 
 test("callGrokJson parses object responses and rejects non-objects", async () => {
-  withEnv("GROK_API_KEY", "k", () => {
+  withEnv("GROQ_API_KEY", "k", () => {
     fakeTransport(() => ({
       ok: true,
       status: 200,
@@ -162,7 +162,7 @@ test("callGrokJson parses object responses and rejects non-objects", async () =>
 });
 
 test("callGrokJson rejects malformed JSON bodies", async () => {
-  withEnv("GROK_API_KEY", "k", () => {
+  withEnv("GROQ_API_KEY", "k", () => {
     fakeTransport(() => ({
       ok: true,
       status: 200,
@@ -191,7 +191,7 @@ test("aiAnalysisEnabled respects AI_ANALYSIS_ENABLED=false and defaults true", (
 });
 
 test("transport restore keeps subsequent behavior", async () => {
-  withEnv("GROK_API_KEY", undefined, () => {
+  withEnv("GROQ_API_KEY", undefined, () => {
     setGrokTransport(null);
     assert.rejects(() => callGrok([{ role: "user", content: "hi" }]), GrokUnavailableError);
   });

@@ -1,9 +1,18 @@
 export const GROK_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
-export const DEFAULT_GROK_MODEL = "llama-3.3-70b-versatile";
+export const DEFAULT_GROK_MODEL = "openai/gpt-oss-120b";
+export const DEFAULT_RESEARCH_MODEL = "groq/compound";
+
+export function resolveReasoningModel(): string {
+  return process.env.GROQ_REASONING_MODEL || process.env.GROQ_MODEL || DEFAULT_GROK_MODEL;
+}
+
+export function resolveResearchModel(): string {
+  return process.env.GROQ_RESEARCH_MODEL || process.env.GROQ_MODEL || DEFAULT_GROK_MODEL;
+}
 
 export class GrokUnavailableError extends Error {
   constructor() {
-    super("AI analysis is not configured (GROK_API_KEY is not set)");
+    super("AI analysis is not configured (GROQ_API_KEY is not set)");
     this.name = "GrokUnavailableError";
   }
 }
@@ -35,6 +44,7 @@ export interface GrokChatMessage {
 }
 
 export interface GrokCompletionOptions {
+  model?: string;
   jsonMode?: boolean;
   timeoutMs?: number;
   maxTokens?: number;
@@ -60,7 +70,7 @@ export function setGrokTransport(fetchLike: FetchLike | null): void {
 }
 
 export function isGrokConfigured(): boolean {
-  return Boolean(process.env.GROK_API_KEY);
+  return Boolean(process.env.GROQ_API_KEY);
 }
 
 export function aiAnalysisEnabled(): boolean {
@@ -80,13 +90,13 @@ export async function callGrok(
   messages: GrokChatMessage[],
   options: GrokCompletionOptions = {}
 ): Promise<string> {
-  const apiKey = process.env.GROK_API_KEY;
+  const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
     throw new GrokUnavailableError();
   }
 
   const timeoutMs = options.timeoutMs ?? 30_000;
-  const model = process.env.GROK_MODEL || DEFAULT_GROK_MODEL;
+  const model = options.model ?? process.env.GROQ_MODEL ?? DEFAULT_GROK_MODEL;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);

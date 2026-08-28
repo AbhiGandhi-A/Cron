@@ -691,6 +691,11 @@ function IssueDetail(props: {
         <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
           <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">AI analysis</p>
           <div className="flex items-center gap-2">
+            {analysis?.available && analysis?.reasoningModel ? (
+              <span className="text-[10px] text-gray-400" title={`${analysis.researchUsed ? `Researched by web-research model${analysis.researchModel ? ` (${analysis.researchModel})` : ""}` : ""}`}>
+                {analysis.researchUsed ? "Reasoned & researched" : `Reasoned with ${analysis.reasoningModel}`}
+              </span>
+            ) : null}
             {analysis?.available && analysis.fix && (
               <button onClick={props.onCopyFix} className="text-[11px] font-semibold text-brand-600 hover:text-brand-700">
                 Copy fix
