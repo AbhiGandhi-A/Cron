@@ -16,15 +16,23 @@ import {
 } from "../src/lib/ai/router";
 import type { NormalizedErrorInput } from "../src/lib/ai/types";
 
-function withEnv(name: string, value: string | undefined, fn: () => void): void {
-  const previous = process.env[name];
-  if (value === undefined) delete process.env[name];
-  else process.env[name] = value;
+async function withEnvMap(
+  envs: Record<string, string | undefined>,
+  fn: () => Promise<unknown> | unknown
+): Promise<void> {
+  const previous = new Map<string, string | undefined>();
+  for (const [name, value] of Object.entries(envs)) {
+    previous.set(name, process.env[name]);
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
   try {
-    fn();
+    await fn();
   } finally {
-    if (previous === undefined) delete process.env[name];
-    else process.env[name] = previous;
+    for (const [name, value] of previous) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
   }
 }
 
@@ -38,40 +46,28 @@ type CapturedCall = {
   };
 };
 
-function makeTransport() {
+function makeTransportWithResearchSupport() {
   const calls: CapturedCall[] = [];
-  const responder = (call: CapturedCall) => {
-    const isResearch = call.body.model.includes("compound") || call.body.model === (process.env.GROQ_RESEARCH_MODEL ?? "");
+  setGrokTransport(async (url, init) => {
+    const call: CapturedCall = { url, headers: init.headers, body: JSON.parse(init.body) };
+    calls.push(call);
+    const isResearch = call.body.model === (process.env.GROQ_RESEARCH_MODEL ?? "");
     if (isResearch) {
+      const data = { choices: [{ message: { content: "research brief about current docs" } }] };
       return {
         ok: true,
         status: 200,
-        body: JSON.stringify({
-          choices: [
-            {
-              message: {
-                content: "DOCS: https://nextjs.org/docs\nROOT CAUSE: recent middleware matcher change\nFIX: update the matcher.",
-              },
-            },
-          ],
-        }),
+        text: async () => JSON.stringify(data),
+        json: async () => data,
       };
     }
+    const content = '{"rootCause":"Root cause here","fix":"Fix here","references":["https://example.com/docs"]}';
+    const data = { choices: [{ message: { content } }] };
     return {
       ok: true,
       status: 200,
-      body: JSON.stringify({ choices: [{ message: { content: '{"rootCause":"Root cause here","fix":"Fix here","references":["https://example.com/docs"]}' } }] }),
-    };
-  };
-  setGrokTransport(async (_url, init) => {
-    const call: CapturedCall = { url: _url, headers: init.headers, body: JSON.parse(init.body) };
-    calls.push(call);
-    const response = responder(call);
-    return {
-      ok: response.ok,
-      status: response.status,
-      text: async () => response.body,
-      json: async () => JSON.parse(response.body) as unknown,
+      text: async () => JSON.stringify(data),
+      json: async () => data,
     };
   });
   return () => calls;
@@ -89,22 +85,18 @@ function plainIssue(): NormalizedErrorInput {
 }
 
 test("resolveReasoningModel/resolveResearchModel use env and safe defaults", () => {
-  withEnv("GROQ_REASONING_MODEL", undefined, () => {
-    withEnv("GROQ_RESEARCH_MODEL", undefined, () => {
-      withEnv("GROQ_MODEL", undefined, () => {
-        assert.equal(resolveReasoningModel(), DEFAULT_GROK_MODEL);
-        assert.equal(resolveResearchModel(), DEFAULT_RESEARCH_MODEL);
-      });
-      withEnv("GROQ_MODEL", "fallback", () => {
-        assert.equal(resolveReasoningModel(), "fallback");
-        assert.equal(resolveResearchModel(), "fallback");
-      });
-    });
+  withEnvMap({ GROQ_REASONING_MODEL: undefined, GROQ_RESEARCH_MODEL: undefined, GROQ_MODEL: undefined }, () => {
+    assert.equal(resolveReasoningModel(), DEFAULT_GROK_MODEL);
+    assert.equal(resolveResearchModel(), DEFAULT_RESEARCH_MODEL);
   });
-  withEnv("GROQ_REASONING_MODEL", "gpt-oss", () => {
+  withEnvMap({ GROQ_REASONING_MODEL: undefined, GROQ_RESEARCH_MODEL: undefined, GROQ_MODEL: "fallback" }, () => {
+    assert.equal(resolveReasoningModel(), "fallback");
+    assert.equal(resolveResearchModel(), "fallback");
+  });
+  withEnvMap({ GROQ_REASONING_MODEL: "gpt-oss", GROQ_RESEARCH_MODEL: undefined, GROQ_MODEL: undefined }, () => {
     assert.equal(resolveReasoningModel(), "gpt-oss");
   });
-  withEnv("GROQ_RESEARCH_MODEL", "compound", () => {
+  withEnvMap({ GROQ_REASONING_MODEL: undefined, GROQ_RESEARCH_MODEL: "compound", GROQ_MODEL: undefined }, () => {
     assert.equal(resolveResearchModel(), "compound");
   });
 });
@@ -117,144 +109,126 @@ test("shouldUseResearch flags current-docs questions and not simple syntax error
   assert.equal(shouldUseResearch({ message: "Unexpected token in JSON" }), false);
 });
 
-test("router uses reasoning model only for ordinary analysis and the correct endpoint", async () => {
-  withEnv("GROQ_API_KEY", "k", () => {
-    withEnv("GROQ_REASONING_MODEL", "reasoner-model", () => {
-      withEnv("GROQ_RESEARCH_MODEL", "research-model", () => {
-        const calls = makeTransport();
-        return runRouterAnalysis(plainIssue()).then((outcome) => {
-          assert.equal(outcome.analysis.available, true);
-          assert.equal(outcome.analysis.rootCause, "Root cause here");
-          assert.equal(outcome.analysis.researchUsed, false);
-          const captured = calls();
-          assert.equal(captured.length, 1);
-          assert.equal(captured[0].url, GROK_BASE_URL);
-          assert.equal(captured[0].body.model, "reasoner-model");
-          assert.equal(captured[0].headers.Authorization, "Bearer k");
-          assert.deepEqual(captured[0].body.response_format, { type: "json_object" });
-        });
-      });
-    });
-  });
-});
+test("router uses reasoning model only for ordinary analysis and the correct endpoint", () =>
+  withEnvMap(
+    { GROQ_API_KEY: "k", GROQ_REASONING_MODEL: "reasoner-model", GROQ_RESEARCH_MODEL: "research-model" },
+    async () => {
+      const calls = makeTransportWithResearchSupport();
+      const outcome = await runRouterAnalysis(plainIssue());
+      assert.equal(outcome.analysis.available, true);
+      assert.equal(outcome.analysis.rootCause, "Root cause here");
+      assert.equal(outcome.analysis.researchUsed, false);
+      const captured = calls();
+      assert.equal(captured.length, 1);
+      assert.equal(captured[0].url, GROK_BASE_URL);
+      assert.equal(captured[0].body.model, "reasoner-model");
+      assert.equal(captured[0].headers.Authorization, "Bearer k");
+      assert.deepEqual(captured[0].body.response_format, { type: "json_object" });
+    }
+  ));
 
-test("router uses research model then reasoning model for current-docs errors and combines the brief", async () => {
-  withEnv("GROQ_API_KEY", "k", () => {
-    withEnv("GROQ_REASONING_MODEL", "reasoner-model", () => {
-      withEnv("GROQ_RESEARCH_MODEL", "research-model", () => {
-        const calls = makeTransport();
-        const issue: NormalizedErrorInput = {
-          ...plainIssue(),
-          title: "Next.js API route returns 404 after deployment",
-          message: "Works locally but 404 in production. Is this a change in the latest Next.js middleware behavior?",
+test("router uses research model then reasoning model for current-docs errors and combines the brief", () =>
+  withEnvMap(
+    { GROQ_API_KEY: "k", GROQ_REASONING_MODEL: "reasoner-model", GROQ_RESEARCH_MODEL: "research-model" },
+    async () => {
+      const calls = makeTransportWithResearchSupport();
+      const issue: NormalizedErrorInput = {
+        ...plainIssue(),
+        title: "Next.js API route returns 404 after deployment",
+        message: "Works locally but 404 in production. Is this a change in the latest Next.js middleware behavior?",
+      };
+      const outcome = await runRouterAnalysis(issue);
+      const captured = calls();
+      assert.equal(captured.length, 2, "research + reasoning calls expected");
+      assert.equal(captured[0].url, GROK_BASE_URL);
+      assert.equal(captured[1].url, GROK_BASE_URL);
+      assert.equal(captured[0].body.model, "research-model");
+      assert.equal(captured[1].body.model, "reasoner-model");
+      const finalSystem = captured[1].body.messages[0].content;
+      assert.ok(finalSystem.includes("WEB RESEARCH BRIEF"), "research brief must reach the reasoning model");
+      assert.equal(outcome.analysis.researchUsed, true);
+      assert.equal(outcome.analysis.available, true);
+    }
+  ));
+
+test("research model failure falls back to reasoning-only analysis", () =>
+  withEnvMap(
+    { GROQ_API_KEY: "k", GROQ_REASONING_MODEL: "reasoner-model", GROQ_RESEARCH_MODEL: "research-model" },
+    async () => {
+      const calls: CapturedCall[] = [];
+      setGrokTransport(async (url, init) => {
+        const call: CapturedCall = { url, headers: init.headers, body: JSON.parse(init.body) };
+        calls.push(call);
+        if (call.body.model === "research-model") {
+          return { ok: false, status: 500, text: async () => "server error", json: async () => ({}) };
+        }
+        const content = '{"rootCause":"Still diagnosed","fix":"fix"}';
+        const data = { choices: [{ message: { content } }] };
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify(data),
+          json: async () => data,
         };
-        return runRouterAnalysis(issue).then((outcome) => {
-          const captured = calls();
-          assert.equal(captured.length, 2, "research + reasoning calls expected");
-          assert.equal(captured[0].url, GROK_BASE_URL);
-          assert.equal(captured[1].url, GROK_BASE_URL);
-          assert.equal(captured[0].body.model, "research-model");
-          assert.equal(captured[1].body.model, "reasoner-model");
-          const finalSystem = captured[1].body.messages[0].content;
-          assert.ok(finalSystem.includes("WEB RESEARCH BRIEF"), "research brief must reach the reasoning model");
-          assert.ok(outcome.analysis.researchUsed === true);
-          assert.equal(outcome.analysis.available, true);
-        });
       });
-    });
-  });
-});
+      const issue: NormalizedErrorInput = { ...plainIssue(), message: "Check the latest docs about this migration error" };
+      const outcome = await runRouterAnalysis(issue);
+      assert.equal(calls.length, 2, "research attempt still happens");
+      assert.equal(calls[0].body.model, "research-model");
+      assert.equal(calls[1].body.model, "reasoner-model");
+      assert.equal(outcome.analysis.available, true);
+      assert.equal(outcome.analysis.rootCause, "Still diagnosed");
+      assert.equal(outcome.analysis.researchUsed, false);
+    }
+  ));
 
-test("research model failure falls back to reasoning-only analysis", async () => {
-  withEnv("GROQ_API_KEY", "k", () => {
-    withEnv("GROQ_REASONING_MODEL", "reasoner-model", () => {
-      withEnv("GROQ_RESEARCH_MODEL", "research-model", () => {
-        const calls: CapturedCall[] = [];
-        setGrokTransport(async (_url, init) => {
-          const call: CapturedCall = { url: _url, headers: init.headers, body: JSON.parse(init.body) };
-          calls.push(call);
-          const isResearch = call.body.model === "research-model";
-          if (isResearch) {
-            return { ok: false, status: 500, text: async () => "server error", json: async () => ({}) };
-          }
-          return {
-            ok: true,
-            status: 200,
-            text: async () => JSON.stringify({ choices: [{ message: { content: '{"rootCause":"Still diagnosed","fix":"fix"}' } }] }),
-            json: async () => ({ choices: [{ message: { content: '{"rootCause":"Still diagnosed","fix":"fix"}' } }] }),
-          };
-        });
-        const issue: NormalizedErrorInput = { ...plainIssue(), message: "Check the latest docs about this migration error" };
-        return runRouterAnalysis(issue).then((outcome) => {
-          assert.equal(calls.length, 2, "research attempt still happens");
-          assert.equal(outcome.analysis.available, true);
-          assert.equal(outcome.analysis.rootCause, "Still diagnosed");
-          assert.equal(outcome.analysis.researchUsed, false);
-        });
-      });
-    });
-  });
-});
+test("reasoning model failure produces graceful unavailable analysis", () =>
+  withEnvMap(
+    { GROQ_API_KEY: "k", GROQ_REASONING_MODEL: "reasoner-model", GROQ_RESEARCH_MODEL: "research-model" },
+    async () => {
+      setGrokTransport(async () => ({ ok: false, status: 400, text: async () => "bad request", json: async () => ({}) }));
+      const outcome = await runRouterAnalysis(plainIssue());
+      assert.equal(outcome.analysis.available, false);
+      assert.equal(outcome.analysis.error, "AI provider returned an error. Please try again later.");
+      assert.equal(outcome.analysis.researchUsed, false);
+    }
+  ));
 
-test("reasoning model failure produces graceful unavailable analysis", async () => {
-  withEnv("GROQ_API_KEY", "k", () => {
-    withEnv("GROQ_REASONING_MODEL", "reasoner-model", () => {
-      withEnv("GROQ_RESEARCH_MODEL", "research-model", () => {
-        setGrokTransport(async () => ({ ok: false, status: 400, text: async () => "bad request", json: async () => ({}) }));
-        return runRouterAnalysis(plainIssue()).then((outcome) => {
-          assert.equal(outcome.analysis.available, false);
-          assert.equal(outcome.analysis.error, "AI provider returned an error. Please try again later.");
-          assert.equal(outcome.analysis.researchUsed, false);
-        });
-      });
-    });
-  });
-});
+test("API key is never exposed in URLs, headers or message bodies", () =>
+  withEnvMap(
+    { GROQ_API_KEY: "super-secret-key-123", GROQ_REASONING_MODEL: "reasoner-model", GROQ_RESEARCH_MODEL: "research-model" },
+    async () => {
+      const calls = makeTransportWithResearchSupport();
+      const issue: NormalizedErrorInput = { ...plainIssue(), message: "Latest deprecation check" };
+      await runRouterAnalysis(issue);
+      for (const call of calls()) {
+        assert.ok(!call.url.includes("super-secret-key-123"));
+        assert.equal(call.headers.Authorization, "Bearer super-secret-key-123");
+        assert.ok(!JSON.stringify(call.body.messages).includes("super-secret-key-123"));
+      }
+    }
+  ));
 
-test("API key is never exposed in URLs, headers or message bodies", async () => {
-  withEnv("GROQ_API_KEY", "super-secret-key-123", () => {
-    withEnv("GROQ_REASONING_MODEL", "reasoner-model", () => {
-      withEnv("GROQ_RESEARCH_MODEL", "research-model", () => {
-        const calls = makeTransport();
-        const issue: NormalizedErrorInput = { ...plainIssue(), message: "Latest deprecation check" };
-        return runRouterAnalysis(issue).then(() => {
-          for (const call of calls()) {
-            assert.ok(!call.url.includes("super-secret-key-123"));
-            assert.equal(call.headers.Authorization, "Bearer super-secret-key-123");
-            assert.ok(!call.headers.Authorization.includes("super-secret-key-123") || call.headers.Authorization.startsWith("Bearer "));
-            const serialized = JSON.stringify(call.body.messages);
-            assert.ok(!serialized.includes("super-secret-key-123"));
-          }
-        });
-      });
-    });
-  });
-});
-
-test("runWebResearch returns null on failure and never throws", async () => {
-  withEnv("GROQ_API_KEY", "k", () => {
-    withEnv("GROQ_RESEARCH_MODEL", "research-model", () => {
+test("runWebResearch returns null on failure and never throws", () =>
+  withEnvMap(
+    { GROQ_API_KEY: "k", GROQ_RESEARCH_MODEL: "research-model" },
+    async () => {
       setGrokTransport(async () => ({ ok: false, status: 429, text: async () => "rate limited", json: async () => ({}) }));
-      return runWebResearch("latest docs").then((result) => {
-        assert.equal(result, null);
-      });
-    });
-  });
-});
+      assert.equal(await runWebResearch("latest docs"), null);
+    }
+  ));
 
-test("callGrokJson accepts an explicit model option", async () => {
-  withEnv("GROQ_API_KEY", "k", () => {
+test("callGrokJson accepts an explicit model option", () =>
+  withEnvMap({ GROQ_API_KEY: "k" }, async () => {
     setGrokTransport(async (_url, init) => {
       assert.equal(JSON.parse(init.body).model, "explicit-model");
+      const data = { choices: [{ message: { content: '{"a":1}' } }] };
       return {
         ok: true,
         status: 200,
-        text: async () => JSON.stringify({ choices: [{ message: { content: '{"a":1}' } }] }),
-        json: async () => ({ choices: [{ message: { content: '{"a":1}' } }] }),
+        text: async () => JSON.stringify(data),
+        json: async () => data,
       };
     });
-    return callGrokJson([{ role: "user", content: "hi" }], { model: "explicit-model" }).then((parsed) => {
-      assert.deepEqual(parsed, { a: 1 });
-    });
-  });
-});
+    assert.deepEqual(await callGrokJson([{ role: "user", content: "hi" }], { model: "explicit-model" }), { a: 1 });
+  }));

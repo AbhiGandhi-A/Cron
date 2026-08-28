@@ -1,6 +1,6 @@
 export const GROK_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
 export const DEFAULT_GROK_MODEL = "openai/gpt-oss-120b";
-export const DEFAULT_RESEARCH_MODEL = "groq/compound";
+export const DEFAULT_RESEARCH_MODEL = "groq/compound-mini";
 
 export function resolveReasoningModel(): string {
   return process.env.GROQ_REASONING_MODEL || process.env.GROQ_MODEL || DEFAULT_GROK_MODEL;
