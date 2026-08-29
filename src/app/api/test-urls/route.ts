@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import connectDb from "@/lib/mongodb";
-import { TestUrl } from "@/lib/models";
+import { TestUrl, TestUrlRequest } from "@/lib/models";
 import { enforceRateLimit, getAuthenticatedIdentifier, logError, readJsonBody } from "@/lib/security";
+import { mergeRequestCounts } from "@/lib/test-urls/view";
 import crypto from "node:crypto";
 
 async function getUserId(): Promise<string | null> {
@@ -29,7 +30,11 @@ export async function GET() {
       .sort({ createdAt: -1 })
       .lean();
 
-    return NextResponse.json({ testUrls });
+    const counts = await TestUrlRequest.aggregate<{ _id: unknown; count: number }>([
+      { $group: { _id: "$testUrlId", count: { $sum: 1 } } },
+    ]);
+
+    return NextResponse.json({ testUrls: mergeRequestCounts(testUrls, counts) });
   } catch (error) {
     logError("test-urls-list", "Failed to list test URLs", error);
     return NextResponse.json(

@@ -6,6 +6,7 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import EmptyState from "@/components/EmptyState";
 import { useToast } from "@/components/Toast";
 import { formatRelativeTime } from "@/lib/utils";
+import { formatRequestBody, formatRequestSize } from "@/lib/test-urls/view";
 
 interface TestUrl {
   _id: string;
@@ -21,10 +22,10 @@ interface CapturedRequest {
   method: string;
   url: string;
   statusCode: number;
-  contentLength: number;
+  requestSize: number;
   contentType: string;
   headers: Record<string, string>;
-  body: string;
+  body: unknown;
   queryParams: Record<string, string> | null;
   receivedAt: string;
 }
@@ -188,12 +189,6 @@ export default function TestUrlsPage() {
       case "OPTIONS": return "bg-gray-100 text-gray-600";
       default: return "bg-gray-100 text-gray-600";
     }
-  }
-
-  function formatSize(bytes: number): string {
-    if (bytes < 1024) return bytes + " B";
-    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
-    return (bytes / 1048576).toFixed(1) + " MB";
   }
 
   function truncateUrl(url: string): string {
@@ -408,7 +403,7 @@ export default function TestUrlsPage() {
                             {req.statusCode}
                           </span>
                           <span className="text-xs text-gray-400 shrink-0">{formatRelativeTime(req.receivedAt)}</span>
-                          <span className="text-xs text-gray-400 shrink-0">{formatSize(req.contentLength)}</span>
+                          <span className="text-xs text-gray-400 shrink-0">{formatRequestSize(req.requestSize)}</span>
                           <svg className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${expandedRequestId === req._id ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
                           </svg>
@@ -426,7 +421,7 @@ export default function TestUrlsPage() {
                               </div>
                               <div>
                                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Size</p>
-                                <p className="font-mono text-gray-700">{formatSize(req.contentLength)}</p>
+                                <p className="font-mono text-gray-700">{formatRequestSize(req.requestSize)}</p>
                               </div>
                               <div>
                                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Received</p>
@@ -451,17 +446,11 @@ export default function TestUrlsPage() {
                                 ))}
                               </div>
                             </div>
-                            {req.body && (
+                            {req.body !== null && req.body !== undefined && (
                               <div className="mt-4">
                                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Body</p>
                                 <div className="bg-gray-50 rounded-lg p-3 font-mono text-xs text-gray-600 whitespace-pre-wrap break-all max-h-64 overflow-y-auto">
-                                  {(() => {
-                                    try {
-                                      return JSON.stringify(JSON.parse(req.body), null, 2);
-                                    } catch {
-                                      return req.body;
-                                    }
-                                  })()}
+                                  {formatRequestBody(req.body)}
                                 </div>
                               </div>
                             )}

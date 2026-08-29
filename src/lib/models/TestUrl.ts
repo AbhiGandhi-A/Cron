@@ -33,6 +33,7 @@ export interface ITestUrlRequest extends Document {
   body: unknown;
   contentType: string | null;
   requestSize: number;
+  statusCode: number;
   receivedAt: Date;
 }
 
@@ -46,6 +47,7 @@ const TestUrlRequestSchema = new Schema<ITestUrlRequest>(
     body: { type: Schema.Types.Mixed, default: null },
     contentType: { type: String, default: null },
     requestSize: { type: Number, default: 0 },
+    statusCode: { type: Number, default: 200 },
     receivedAt: { type: Date, default: Date.now },
   },
   { timestamps: false }
