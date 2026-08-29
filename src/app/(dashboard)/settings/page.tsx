@@ -23,6 +23,7 @@ export default function SettingsPage() {
   const [monthlyRemaining, setMonthlyRemaining] = useState<number | null>(null);
   const [maxExecutions, setMaxExecutions] = useState<number | null>(null);
   const [maxJobs, setMaxJobs] = useState<number | null>(null);
+  const [remainingJobs, setRemainingJobs] = useState<number | null>(null);
   const [aiSettings, setAiSettings] = useState<AiMonitoringSettings>({ ...DEFAULT_AI_SETTINGS });
   const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
 
@@ -33,6 +34,7 @@ export default function SettingsPage() {
         setMonthlyRemaining(data.monthlyRemaining ?? null);
         setMaxExecutions(data.maxExecutions ?? null);
         setMaxJobs(data.maxJobs ?? null);
+        setRemainingJobs(data.remainingJobs ?? null);
       })
       .catch(() => {})
       ;
@@ -99,7 +101,11 @@ export default function SettingsPage() {
                   <p className="text-xs text-gray-400 mt-0.5">Maximum number of cron jobs</p>
                 </div>
                 <span className="text-sm font-bold text-gray-900">
-                  {maxJobs !== null ? maxJobs.toLocaleString() : "—"}
+                  {remainingJobs !== null && maxJobs !== null
+                    ? `${remainingJobs.toLocaleString()} / ${maxJobs.toLocaleString()} remaining`
+                    : maxJobs !== null
+                      ? `${maxJobs.toLocaleString()}`
+                      : "—"}
                 </span>
               </div>
               <div className="flex items-center justify-between py-4">

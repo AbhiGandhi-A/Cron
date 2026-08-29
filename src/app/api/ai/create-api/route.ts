@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { enforceRateLimit, getAuthenticatedIdentifier, logError, readJsonBody, sanitizeForLog } from "@/lib/security";
 import connectDb from "@/lib/mongodb";
-import { callGrokJson, isGrokConfigured, resolveReasoningModel, GrokUnavailableError, GrokTimeoutError, GrokHttpError, GrokMalformedError } from "@/lib/ai/grok";
+import { callGrokJson, isGrokConfigured, resolveReasoningModel, GrokUnavailableError, GrokTimeoutError, GrokHttpError, GrokMalformedError, type GrokChatMessage } from "@/lib/ai/grok";
 import { buildCreateApiSystemPrompt, buildCreateApiPrompt } from "@/lib/ai/prompts";
 import { generateApiInputSchema, ALLOWED_AUTH_MODES } from "@/lib/ai/validate";
 import { createGeneratedApi, serializeGeneratedApi } from "@/lib/generated-apis/service";
@@ -11,6 +11,31 @@ import { GeneratedApi } from "@/lib/models";
 
 const MAX_DESCRIPTION_LENGTH = 8000;
 const MAX_APIS_PER_USER = 20;
+
+export const maxDuration = 60;
+
+const PRIMARY_OPTIONS = { timeoutMs: 30_000, maxTokens: 1600, model: resolveReasoningModel() } as const;
+const RETRY_OPTIONS = { timeoutMs: 25_000, maxTokens: 1200, model: resolveReasoningModel() } as const;
+
+const REPAIR_INSTRUCTION =
+  "Your previous answer was rejected. Return ONLY a single valid JSON object with no surrounding text, prose, or code fences.";
+
+async function callGrokJsonWithRepair(
+  messages: GrokChatMessage[]
+): Promise<Record<string, unknown>> {
+  try {
+    return await callGrokJson(messages, PRIMARY_OPTIONS);
+  } catch (error) {
+    const retryable =
+      error instanceof GrokMalformedError ||
+      (error instanceof GrokHttpError && (error.status === 429 || error.status >= 500));
+    if (!retryable) throw error;
+    return await callGrokJson(
+      [...messages, { role: "user", content: REPAIR_INSTRUCTION }],
+      RETRY_OPTIONS
+    );
+  }
+}
 
 type AuthMode = (typeof ALLOWED_AUTH_MODES)[number];
 
@@ -68,17 +93,14 @@ export async function POST(req: Request) {
 
     let raw: Record<string, unknown>;
     let validated: ReturnType<typeof generateApiInputSchema.safeParse>;
-    const apiOptions = { timeoutMs: 45_000, maxTokens: 1600, model: resolveReasoningModel() } as const;
     const systemPrompt = buildCreateApiSystemPrompt();
     const userPrompt = buildCreateApiPrompt(description.trim());
+    const baseMessages: GrokChatMessage[] = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ];
     try {
-      raw = await callGrokJson(
-        [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        apiOptions
-      );
+      raw = await callGrokJsonWithRepair(baseMessages);
       validated = generateApiInputSchema.safeParse(raw);
       if (!validated.success) {
         const issues = validated.error.issues
@@ -87,11 +109,10 @@ export async function POST(req: Request) {
           .slice(0, 500);
         raw = await callGrokJson(
           [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt },
+            ...baseMessages,
             { role: "user", content: `Your previous configuration was rejected. Fix these validation errors and return ONLY the corrected single JSON object:\n${issues}` },
           ],
-          apiOptions
+          RETRY_OPTIONS
         );
         validated = generateApiInputSchema.safeParse(raw);
       }

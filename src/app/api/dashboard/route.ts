@@ -82,6 +82,7 @@ export async function GET(req: Request) {
     const maxExecutions = user?.maxExecutions ?? 1000;
     const maxJobs = user?.maxJobs ?? 10;
     const monthlyRemaining = Math.max(0, maxExecutions - monthlyExecutions);
+    const remainingJobs = Math.max(0, maxJobs - totalJobs);
 
     return NextResponse.json({
       totalJobs,
