@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import mongoose from "mongoose";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import connectDb from "@/lib/mongodb";
@@ -36,13 +37,15 @@ export async function GET(
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
 
+    const jobId = new mongoose.Types.ObjectId(id);
+
     const [buckets, avgResult, lastSuccess, lastFailure] = await Promise.all([
       JobExecution.aggregate([
-        { $match: { jobId: id } },
+        { $match: { jobId } },
         { $group: { _id: "$status", count: { $sum: 1 } } },
       ]),
       JobExecution.aggregate([
-        { $match: { jobId: id, status: { $in: ["SUCCESS", "FAILED", "TIMEOUT"] } } },
+        { $match: { jobId, status: { $in: ["SUCCESS", "FAILED", "TIMEOUT"] } } },
         {
           $group: {
             _id: null,

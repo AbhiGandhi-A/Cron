@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import mongoose from "mongoose";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import connectDb from "@/lib/mongodb";
@@ -23,54 +24,48 @@ export async function GET(req: Request) {
 
     await connectDb();
 
-    const [
-      totalJobs,
-      activeJobs,
-      failedJobCount,
-      successfulExecutions,
-      totalExecutions,
-      recentExecutions,
-    ] = await Promise.all([
-      CronJob.countDocuments({ userId }),
-      CronJob.countDocuments({ userId, isActive: true }),
-      JobExecution.distinct("jobId", {
-        status: "FAILED",
-        jobId: { $in: await CronJob.distinct("_id", { userId }) },
-      }).then((ids) => ids.length),
-      JobExecution.countDocuments({
-        jobId: { $in: await CronJob.distinct("_id", { userId }) },
-        status: "SUCCESS",
-      }),
-      JobExecution.countDocuments({
-        jobId: { $in: await CronJob.distinct("_id", { userId }) },
-      }),
-      JobExecution.aggregate([
-        {
-          $lookup: {
-            from: "cronjobs",
-            localField: "jobId",
-            foreignField: "_id",
-            as: "job",
+    const [totalJobs, activeJobs, failedJobCount, successfulExecutions, totalExecutions, recentExecutions] =
+      await Promise.all([
+        CronJob.countDocuments({ userId }),
+        CronJob.countDocuments({ userId, isActive: true }),
+        JobExecution.distinct("jobId", {
+          status: "FAILED",
+          jobId: { $in: await CronJob.distinct("_id", { userId }) },
+        }).then((ids) => ids.length),
+        JobExecution.countDocuments({
+          jobId: { $in: await CronJob.distinct("_id", { userId }) },
+          status: "SUCCESS",
+        }),
+        JobExecution.countDocuments({
+          jobId: { $in: await CronJob.distinct("_id", { userId }) },
+        }),
+        JobExecution.aggregate([
+          {
+            $lookup: {
+              from: "cronjobs",
+              localField: "jobId",
+              foreignField: "_id",
+              as: "job",
+            },
           },
-        },
-        { $unwind: "$job" },
-        { $match: { "job.userId": userId } },
-        { $sort: { startedAt: -1 } },
-        { $limit: 10 },
-        {
-          $project: {
-            id: "$_id",
-            status: 1,
-            httpStatus: 1,
-            responseTime: 1,
-            startedAt: 1,
-            "job.name": 1,
-            "job.url": 1,
-            "job.method": 1,
+          { $unwind: "$job" },
+          { $match: { "job.userId": new mongoose.Types.ObjectId(userId) } },
+          { $sort: { startedAt: -1 } },
+          { $limit: 10 },
+          {
+            $project: {
+              id: "$_id",
+              status: 1,
+              httpStatus: 1,
+              responseTime: 1,
+              startedAt: 1,
+              "job.name": 1,
+              "job.url": 1,
+              "job.method": 1,
+            },
           },
-        },
-      ]),
-    ]);
+        ]),
+      ]);
 
     // compute monthly executions for the current user
     const now = new Date();
