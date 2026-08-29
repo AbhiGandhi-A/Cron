@@ -84,22 +84,26 @@ export async function GET(req: Request) {
     const monthlyRemaining = Math.max(0, maxExecutions - monthlyExecutions);
     const remainingJobs = Math.max(0, maxJobs - totalJobs);
 
-    return NextResponse.json({
-      totalJobs,
-      activeJobs,
-      failedJobs: failedJobCount,
-      successfulExecutions,
-      totalExecutions,
-      successRate:
-        totalExecutions > 0
-          ? Math.round((successfulExecutions / totalExecutions) * 100)
-          : 0,
-      recentExecutions,
-      monthlyExecutions,
-      monthlyRemaining,
-      maxExecutions,
-      maxJobs,
-    });
+    return NextResponse.json(
+      {
+        totalJobs,
+        activeJobs,
+        failedJobs: failedJobCount,
+        successfulExecutions,
+        totalExecutions,
+        successRate:
+          totalExecutions > 0
+            ? Math.round((successfulExecutions / totalExecutions) * 100)
+            : 0,
+        recentExecutions,
+        monthlyExecutions,
+        monthlyRemaining,
+        maxExecutions,
+        maxJobs,
+        remainingJobs,
+      },
+      { headers: { "Cache-Control": "no-store" } }
+    );
   } catch (error) {
     logError("dashboard", "Failed to load dashboard", error);
     return NextResponse.json(

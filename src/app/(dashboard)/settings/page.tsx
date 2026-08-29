@@ -28,7 +28,7 @@ export default function SettingsPage() {
   const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
 
   useEffect(() => {
-    fetch("/api/dashboard")
+    fetch("/api/dashboard", { cache: "no-store" })
       .then((r) => r.json())
       .then((data) => {
         setMonthlyRemaining(data.monthlyRemaining ?? null);
