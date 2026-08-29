@@ -109,12 +109,14 @@ export default function JobDetailPage() {
   const [showInspector, setShowInspector] = useState(false);
   const [inspectorResult, setInspectorResult] = useState<InspectorResult | null>(null);
 
-  const fetchJob = useCallback(async () => {
+  const fetchJob = useCallback(async (opts?: { silent?: boolean }) => {
     try {
       const res = await fetch("/api/jobs/" + params.id);
       if (!res.ok) {
-        showToast("Job not found", "error");
-        router.push("/jobs");
+        if (!opts?.silent) {
+          showToast("Job not found", "error");
+          router.push("/jobs");
+        }
         return;
       }
       const data = await res.json();
@@ -147,13 +149,19 @@ export default function JobDetailPage() {
         // preview is best effort
       }
     } catch {
-      showToast("Failed to load job", "error");
+      if (!opts?.silent) {
+        showToast("Failed to load job", "error");
+      }
     } finally {
       setLoading(false);
     }
   }, [params.id, showToast, router]);
 
-  useEffect(() => { fetchJob(); }, [fetchJob]);
+  useEffect(() => {
+    fetchJob();
+    const interval = setInterval(() => fetchJob({ silent: true }), 10000);
+    return () => clearInterval(interval);
+  }, [fetchJob]);
 
   async function handleTrigger() {
     setTriggering(true);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import DashboardLayout from "@/components/DashboardLayout";
 import StatCard from "@/components/StatCard";
@@ -53,18 +53,30 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [aiData, setAiData] = useState<AiMonitoringData | null>(null);
 
-  useEffect(() => {
+  const loadDashboard = useCallback(() => {
     fetch("/api/dashboard")
       .then((r) => r.json())
       .then(setData)
       .catch(console.error)
       .finally(() => setLoading(false));
+  }, []);
 
+  const loadMonitoring = useCallback(() => {
     fetch("/api/ai/monitoring")
       .then((r) => r.json())
       .then(setAiData)
       .catch(() => setAiData(null));
   }, []);
+
+  useEffect(() => {
+    loadDashboard();
+    loadMonitoring();
+    const interval = setInterval(() => {
+      loadDashboard();
+      loadMonitoring();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [loadDashboard, loadMonitoring]);
 
   const openAssistant = () => {
     window.dispatchEvent(new CustomEvent("cronjobio:ai:open"));
