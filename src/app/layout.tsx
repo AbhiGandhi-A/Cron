@@ -4,7 +4,7 @@ import "./globals.css";
 import { Providers } from "./providers";
 
 const SITE_NAME = process.env.NEXT_PUBLIC_APP_NAME || "CronJob.io";
-const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://cron-job-free.vercel.app";
+const SITE_URL = "https://cron-job-free.vercel.app";
 const ADSENSE_CLIENT = "ca-pub-6250622484538760";
 const BRAND_COLOR = "#2563eb";
 

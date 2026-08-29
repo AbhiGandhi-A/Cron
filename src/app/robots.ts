@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 
-const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://cron-job-free.vercel.app";
+const SITE_URL = "https://cron-job-free.vercel.app";
 
 export default function robots(): MetadataRoute.Robots {
   return {

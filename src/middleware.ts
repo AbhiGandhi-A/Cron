@@ -5,11 +5,12 @@ import { withAuth } from "next-auth/middleware";
 const securityHeaders: Record<string, string> = {
   "Content-Security-Policy": [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://pagead2.googlesyndication.com https://*.googlesyndication.com https://*.googleadservices.com https://*.google.com",
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data:",
-    "connect-src 'self'",
+    "img-src 'self' data: https://*.googlesyndication.com https://*.googleadservices.com https://*.doubleclick.net https://*.google.com",
+    "connect-src 'self' https://*.googlesyndication.com https://*.googleadservices.com https://*.doubleclick.net",
     "font-src 'self' data:",
+    "frame-src 'self' https://googleads.g.doubleclick.net https://*.googlesyndication.com https://*.googleadservices.com https://*.doubleclick.net",
     "object-src 'none'",
     "base-uri 'self'",
     "frame-ancestors 'none'",
@@ -50,7 +51,11 @@ export default withAuth(
   },
   {
     callbacks: {
-      authorized: ({ token }) => !!token,
+      authorized: ({ token, req }) => {
+        const publicPaths = ["/ads.txt", "/robots.txt", "/sitemap.xml"];
+        if (publicPaths.some((path) => req.nextUrl.pathname.startsWith(path))) return true;
+        return !!token;
+      },
     },
     pages: {
       signIn: "/auth/login",
