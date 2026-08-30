@@ -1,11 +1,9 @@
 import type { Metadata } from "next";
-import Script from "next/script";
 import "./globals.css";
 import { Providers } from "./providers";
 
 const SITE_NAME = process.env.NEXT_PUBLIC_APP_NAME || "CronJob.io";
 const SITE_URL = "https://cron-job-free.vercel.app";
-const ADSENSE_CLIENT = "ca-pub-6250622484538760";
 const BRAND_COLOR = "#2563eb";
 
 export const metadata: Metadata = {
@@ -68,7 +66,6 @@ export const metadata: Metadata = {
     initialScale: 1,
   },
   other: {
-    "google-adsense-account": ADSENSE_CLIENT,
     "theme-color": BRAND_COLOR,
     "msapplication-TileColor": BRAND_COLOR,
     "msapplication-tooltip": SITE_NAME,
@@ -88,11 +85,6 @@ export default function RootLayout({
         <meta
           name="google-site-verification"
           content="DBhmTd_4mP-WuudhZQY3IdCmE8cioysxJUbsBPxxkSM"
-        />
-        <Script
-          src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${ADSENSE_CLIENT}`}
-          crossOrigin="anonymous"
-          strategy="afterInteractive"
         />
       </head>
       <body className="antialiased">
