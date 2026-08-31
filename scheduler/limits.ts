@@ -25,7 +25,10 @@ export async function checkDailyExecutionLimit(
 
   const maxExecutions: number = user.maxExecutions ?? 1000;
 
+  const userJobIds = await mongoose.connection.db!.collection("cronjobs").distinct("_id", { userId });
+
   const currentDayExecutions = await mongoose.connection.db!.collection("jobexecutions").countDocuments({
+    jobId: { $in: userJobIds },
     startedAt: { $gte: dayStart },
     $or: [
       { status: "SUCCESS" },

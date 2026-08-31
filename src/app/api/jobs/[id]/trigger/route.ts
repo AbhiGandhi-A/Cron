@@ -148,7 +148,9 @@ export async function POST(
     const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
     const user = await User.findById(userId).lean();
     const maxExecutions = user?.maxExecutions ?? 1000;
+    const userJobIds = await CronJob.distinct("_id", { userId });
     const currentDayCount = await JobExecution.countDocuments({
+      jobId: { $in: userJobIds },
       startedAt: { $gte: dayStart },
       status: { $in: ["SUCCESS", "FAILED"] },
     });
