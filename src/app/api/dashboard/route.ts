@@ -67,21 +67,21 @@ export async function GET(req: Request) {
         ]),
       ]);
 
-    // compute monthly executions for the current user
+    // compute daily executions for the current user
     const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
 
     const userJobIds = await CronJob.distinct("_id", { userId });
 
-    const monthlyExecutions = await JobExecution.countDocuments({
+    const dailyExecutions = await JobExecution.countDocuments({
       jobId: { $in: userJobIds },
-      startedAt: { $gte: startOfMonth },
+      startedAt: { $gte: startOfDay },
     });
 
     const user = await User.findById(userId).lean();
     const maxExecutions = user?.maxExecutions ?? 1000;
     const maxJobs = user?.maxJobs ?? 10;
-    const monthlyRemaining = Math.max(0, maxExecutions - monthlyExecutions);
+    const dailyRemaining = Math.max(0, maxExecutions - dailyExecutions);
     const remainingJobs = Math.max(0, maxJobs - totalJobs);
 
     return NextResponse.json(
@@ -96,8 +96,8 @@ export async function GET(req: Request) {
             ? Math.round((successfulExecutions / totalExecutions) * 100)
             : 0,
         recentExecutions,
-        monthlyExecutions,
-        monthlyRemaining,
+        dailyExecutions,
+        dailyRemaining,
         maxExecutions,
         maxJobs,
         remainingJobs,

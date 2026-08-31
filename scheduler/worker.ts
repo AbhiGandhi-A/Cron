@@ -4,7 +4,7 @@ import { SchedulerHeartbeatModel } from "./heartbeatModel";
 import { executeWithRetry } from "./retry";
 import { logger } from "./logger";
 import { computeNextRunAt } from "../src/lib/cron";
-import { checkMonthlyExecutionLimit } from "./limits";
+import { checkDailyExecutionLimit } from "./limits";
 import { checkAndNotify } from "./notifications";
 
 const LOCK_EXPIRY_MS = parseInt(process.env.SCHEDULER_LOCK_EXPIRY_MS || "900000", 10);
@@ -85,9 +85,9 @@ export async function processJob(jobId: string, isCatchUp = false): Promise<void
   }
 
   try {
-    const limitCheck = await checkMonthlyExecutionLimit(job.userId);
+    const limitCheck = await checkDailyExecutionLimit(job.userId);
     if (!limitCheck.allowed) {
-      logger.warn("limits", "Job " + job.name + " skipped: monthly execution limit reached (" + limitCheck.current + "/" + limitCheck.max + ")");
+      logger.warn("limits", "Job " + job.name + " skipped: daily execution limit reached (" + limitCheck.current + "/" + limitCheck.max + ")");
       await releaseJobLock(jobId, null, "SKIPPED_LIMIT", null);
       return;
     }

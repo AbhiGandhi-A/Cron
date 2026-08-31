@@ -7,11 +7,11 @@ export interface LimitCheckResult {
   max: number;
 }
 
-export async function checkMonthlyExecutionLimit(
+export async function checkDailyExecutionLimit(
   userId: mongoose.Types.ObjectId
 ): Promise<LimitCheckResult> {
   const now = new Date();
-  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
+  const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
 
   const user = await mongoose.connection.db!.collection("users").findOne(
     { _id: userId },
@@ -25,8 +25,8 @@ export async function checkMonthlyExecutionLimit(
 
   const maxExecutions: number = user.maxExecutions ?? 1000;
 
-  const currentMonthExecutions = await mongoose.connection.db!.collection("jobexecutions").countDocuments({
-    startedAt: { $gte: monthStart },
+  const currentDayExecutions = await mongoose.connection.db!.collection("jobexecutions").countDocuments({
+    startedAt: { $gte: dayStart },
     $or: [
       { status: "SUCCESS" },
       { status: "FAILED" },
@@ -34,8 +34,8 @@ export async function checkMonthlyExecutionLimit(
   });
 
   return {
-    allowed: currentMonthExecutions < maxExecutions,
-    current: currentMonthExecutions,
+    allowed: currentDayExecutions < maxExecutions,
+    current: currentDayExecutions,
     max: maxExecutions,
   };
 }

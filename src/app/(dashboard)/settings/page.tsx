@@ -20,7 +20,7 @@ interface AiStatus {
 
 export default function SettingsPage() {
   const { data: session } = useSession();
-  const [monthlyRemaining, setMonthlyRemaining] = useState<number | null>(null);
+  const [dailyRemaining, setDailyRemaining] = useState<number | null>(null);
   const [maxExecutions, setMaxExecutions] = useState<number | null>(null);
   const [maxJobs, setMaxJobs] = useState<number | null>(null);
   const [remainingJobs, setRemainingJobs] = useState<number | null>(null);
@@ -31,7 +31,7 @@ export default function SettingsPage() {
     fetch("/api/dashboard", { cache: "no-store" })
       .then((r) => r.json())
       .then((data) => {
-        setMonthlyRemaining(data.monthlyRemaining ?? null);
+        setDailyRemaining(data.dailyRemaining ?? null);
         setMaxExecutions(data.maxExecutions ?? null);
         setMaxJobs(data.maxJobs ?? null);
         setRemainingJobs(data.remainingJobs ?? null);
@@ -110,10 +110,10 @@ export default function SettingsPage() {
               </div>
               <div className="flex items-center justify-between py-4">
                 <div>
-                  <p className="text-sm font-semibold text-gray-900">Monthly Executions</p>
-                  <p className="text-xs text-gray-400 mt-0.5">Maximum executions per month</p>
+                  <p className="text-sm font-semibold text-gray-900">Daily Executions</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Maximum executions per day</p>
                 </div>
-                <span className="text-sm font-bold text-gray-900">{monthlyRemaining !== null && maxExecutions !== null ? `${monthlyRemaining.toLocaleString()} / ${maxExecutions.toLocaleString()} remaining` : (maxExecutions !== null ? `${maxExecutions.toLocaleString()}` : "—")}</span>
+                <span className="text-sm font-bold text-gray-900">{dailyRemaining !== null && maxExecutions !== null ? `${dailyRemaining.toLocaleString()} / ${maxExecutions.toLocaleString()} remaining` : (maxExecutions !== null ? `${maxExecutions.toLocaleString()}` : "—")}</span>
               </div>
             </div>
             <div className="mt-5 p-4 bg-amber-50 border border-amber-200 rounded-xl">

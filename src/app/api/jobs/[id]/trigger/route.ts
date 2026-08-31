@@ -145,21 +145,21 @@ export async function POST(
     await validateOutboundUrl(lock.url);
 
     const now = new Date();
-    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
+    const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
     const user = await User.findById(userId).lean();
     const maxExecutions = user?.maxExecutions ?? 1000;
-    const currentMonthCount = await JobExecution.countDocuments({
-      startedAt: { $gte: monthStart },
+    const currentDayCount = await JobExecution.countDocuments({
+      startedAt: { $gte: dayStart },
       status: { $in: ["SUCCESS", "FAILED"] },
     });
-    if (currentMonthCount >= maxExecutions) {
+    if (currentDayCount >= maxExecutions) {
       await CronJob.findByIdAndUpdate(id, {
         isRunning: false,
         lockedAt: null,
         lockedBy: null,
       });
       return NextResponse.json(
-        { error: "Monthly execution limit reached", current: currentMonthCount, max: maxExecutions },
+        { error: "Daily execution limit reached", current: currentDayCount, max: maxExecutions },
         { status: 429 }
       );
     }
@@ -215,7 +215,7 @@ export async function POST(
         completedAt: new Date().toISOString(),
       },
       usage: {
-        current: currentMonthCount + 1,
+        current: currentDayCount + 1,
         max: maxExecutions,
       },
     });
