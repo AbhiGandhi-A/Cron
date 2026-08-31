@@ -52,8 +52,25 @@ export default withAuth(
   {
     callbacks: {
       authorized: ({ token, req }) => {
-        const publicPaths = ["/ads.txt", "/robots.txt", "/sitemap.xml"];
-        if (publicPaths.some((path) => req.nextUrl.pathname.startsWith(path))) return true;
+        const { pathname } = req.nextUrl;
+        const publicPages = [
+          "/about",
+          "/contact",
+          "/privacy",
+          "/terms",
+          "/cookie-policy",
+          "/ads.txt",
+          "/robots.txt",
+          "/sitemap.xml",
+        ];
+        const isPublic =
+          pathname === "/" ||
+          pathname === "/auth/login" ||
+          pathname === "/auth/register" ||
+          publicPages.some(
+            (p) => pathname === p || pathname.startsWith(p + "/")
+          );
+        if (isPublic) return true;
         return !!token;
       },
     },

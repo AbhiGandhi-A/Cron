@@ -1,13 +1,23 @@
 import type { MetadataRoute } from "next";
+import { getSiteUrl } from "@/lib/site";
 
-const SITE_URL = "https://cron-job-free.vercel.app";
+const SITE_URL = getSiteUrl();
 
 export default function robots(): MetadataRoute.Robots {
   return {
     rules: {
       userAgent: "*",
       allow: "/",
-      disallow: ["/api/", "/auth/"],
+      disallow: [
+        "/api/",
+        "/auth/",
+        "/app/",
+        "/jobs/",
+        "/api-tester/",
+        "/test-urls/",
+        "/generate-api/",
+        "/settings/",
+      ],
     },
     sitemap: `${SITE_URL}/sitemap.xml`,
   };

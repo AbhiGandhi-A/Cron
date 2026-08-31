@@ -1,19 +1,19 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from "./providers";
+import { SITE_NAME, getSiteUrl } from "@/lib/site";
 
-const SITE_NAME = process.env.NEXT_PUBLIC_APP_NAME || "CronJob.io";
-const SITE_URL = "https://cron-job-free.vercel.app";
 const BRAND_COLOR = "#2563eb";
+const SITE_URL = getSiteUrl();
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: `${SITE_NAME} - Self-Hosted Cron Job Scheduler`,
+    default: `${SITE_NAME} - Cron Job Scheduler, API Tester and Webhook Monitoring`,
     template: `%s | ${SITE_NAME}`,
   },
   description:
-    "Create, schedule, monitor and debug cron jobs with CronJob.io. Self-hosted cron job SaaS with an API tester, webhook test URLs and an AI dev assistant.",
+    "Cron Job Free is a self-hosted cron job scheduler with an API tester, webhook test URLs, AI dev assistant and job monitoring. Create, schedule, verify and debug HTTP cron jobs from one dashboard.",
   applicationName: SITE_NAME,
   generator: "Next.js",
   referrer: "strict-origin-when-cross-origin",
@@ -50,16 +50,32 @@ export const metadata: Metadata = {
     type: "website",
     url: SITE_URL,
     siteName: SITE_NAME,
-    title: `${SITE_NAME} - Self-Hosted Cron Job Scheduler`,
+    title: `${SITE_NAME} - Cron Job Scheduler, API Tester and Webhook Monitoring`,
     description:
-      "Create, schedule, monitor and debug cron jobs with CronJob.io. Self-hosted cron job SaaS with an API tester, webhook test URLs and an AI dev assistant.",
+      "Cron Job Free is a self-hosted cron job scheduler with an API tester, webhook test URLs, AI dev assistant and job monitoring. Create, schedule, verify and debug HTTP cron jobs from one dashboard.",
+    images: [
+      {
+        url: "/opengraph-image.png",
+        width: 1200,
+        height: 630,
+        alt: SITE_NAME,
+      },
+    ],
     locale: "en_US",
   },
   twitter: {
-    card: "summary",
-    title: `${SITE_NAME} - Self-Hosted Cron Job Scheduler`,
+    card: "summary_large_image",
+    title: `${SITE_NAME} - Cron Job Scheduler, API Tester and Webhook Monitoring`,
     description:
-      "Create, schedule, monitor and debug cron jobs with CronJob.io. Self-hosted cron job SaaS with an API tester, webhook test URLs and an AI dev assistant.",
+      "Cron Job Free is a self-hosted cron job scheduler with an API tester, webhook test URLs, AI dev assistant and job monitoring. Create, schedule, verify and debug HTTP cron jobs from one dashboard.",
+    images: ["/opengraph-image.png"],
+  },
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/icon.svg", type: "image/svg+xml" },
+    ],
+    apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
   },
   viewport: {
     width: "device-width",

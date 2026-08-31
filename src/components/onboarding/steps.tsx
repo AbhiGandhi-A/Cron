@@ -58,7 +58,7 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
     description:
       "Automate your workflows with scheduled HTTP requests. Create cron jobs that hit your endpoints on a fixed schedule, verify the response, and get notified the moment something goes wrong.",
     icon: <Icon path={CLOCK} />,
-    href: "/",
+    href: "/app",
     hrefLabel: "Go to Dashboard",
   },
   {
@@ -67,7 +67,7 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
     description:
       "Your dashboard summarizes how everything is running: total runs, successes, failures, average response time, and your monthly execution budget for the free plan.",
     icon: <Icon path={GRID} />,
-    href: "/",
+    href: "/app",
     hrefLabel: "Open Dashboard",
   },
   {
