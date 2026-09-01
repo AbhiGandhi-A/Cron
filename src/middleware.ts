@@ -89,7 +89,6 @@ export default withAuth(
 
 export const config = {
   matcher: [
-    "/((?!auth|api/auth|api/test|api/public|api/temp-mail/webhook|_next/static|_next/image|favicon.ico).*)",
     "/((?!auth|api/auth|api/test|api/public|api/temp-mail/webhook|_next/static|_next/image|favicon.ico|google.*\\.html|.*\\.(?:ico|png|jpg|jpeg|svg|txt|xml)).*)",
   ],
 };

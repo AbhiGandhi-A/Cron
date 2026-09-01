@@ -393,3 +393,45 @@ test("rate limiting uses existing system and blocks over-limit", () => {
   assert.equal(blocked.allowed, false);
   assert.equal(blocked.remaining, 0);
 });
+
+// ---------------- persistence & lifecycle tests ----------------
+
+test("temp mail persistence: getActiveMailbox restores existing mailbox across reloads", async (t) => {
+  if (setupError) return t.skip("mongodb-memory-server unavailable: " + setupError.message);
+
+  const { createMailbox, getActiveMailbox, deleteMailbox } = await import("../src/lib/temp-mail/service");
+  const owner = userId();
+
+  // 1. Initial state: no mailbox
+  const initial = await getActiveMailbox(owner);
+  assert.equal(initial, null, "initial getActiveMailbox should be null");
+
+  // 2. Create mailbox
+  const created = await createMailbox(owner);
+  assert.ok(created.publicAddress);
+  assert.ok(created.mailboxToken);
+
+  // 3. Simulating page load / refresh / return after logout
+  const restored1 = await getActiveMailbox(owner);
+  assert.ok(restored1, "mailbox must be restored on page load");
+  assert.equal(restored1!.publicAddress, created.publicAddress, "public address must match created address");
+  assert.equal(restored1!.isExpired, false);
+
+  // 4. Second reload / check
+  const restored2 = await getActiveMailbox(owner);
+  assert.ok(restored2, "mailbox must persist across multiple reloads");
+  assert.equal(restored2!.publicAddress, created.publicAddress);
+
+  // 5. Explicit deletion
+  const deleted = await deleteMailbox(owner);
+  assert.equal(deleted, true);
+
+  // 6. After deletion: getActiveMailbox returns null
+  const afterDelete = await getActiveMailbox(owner);
+  assert.equal(afterDelete, null, "deleted mailbox should return null");
+
+  // 7. Creating a new mailbox creates a fresh address
+  const newCreated = await createMailbox(owner);
+  assert.ok(newCreated.publicAddress);
+  assert.notEqual(newCreated.publicAddress, created.publicAddress, "new generation should yield a fresh address");
+});

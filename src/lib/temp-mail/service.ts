@@ -22,24 +22,11 @@ export interface CreateMailboxResult {
 export async function createMailbox(ownerId: string): Promise<CreateMailboxResult> {
   await connectDb();
 
-  const existing = await TemporaryMailbox.findOne({
-    ownerId,
-    status: "active",
-  }).lean();
-
-  if (existing) {
-    const token = generateMailboxToken();
-    const tokenHash = hashMailboxToken(token);
-    await TemporaryMailbox.updateOne(
-      { _id: existing._id },
-      { $set: { mailboxTokenHash: tokenHash } }
-    );
-    return {
-      publicAddress: existing.publicAddress,
-      mailboxToken: token,
-      expiresAt: existing.expiresAt,
-    };
-  }
+  // Mark any previous active mailboxes for this owner as deleted
+  await TemporaryMailbox.updateMany(
+    { ownerId, status: "active" },
+    { $set: { status: "deleted", deletedAt: new Date() } }
+  );
 
   const provider = getEmailReceiver();
   const domain = getTempMailDomain();
@@ -87,7 +74,9 @@ export async function getActiveMailbox(ownerId: string): Promise<{
   const mailbox = await TemporaryMailbox.findOne({
     ownerId,
     status: "active",
-  }).lean();
+  })
+    .sort({ createdAt: -1 })
+    .lean();
 
   if (!mailbox) return null;
 
