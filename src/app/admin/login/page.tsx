@@ -1,12 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Toast } from "@/components/admin/Toast";
 
 export default function AdminLogin() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -14,7 +13,6 @@ export default function AdminLogin() {
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    // Check if already authenticated
     checkAuth();
   }, []);
 
@@ -51,7 +49,7 @@ export default function AdminLogin() {
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || "Login failed");
+        throw new Error(data.error || "Invalid username or password");
       }
 
       const data = await res.json();
@@ -60,68 +58,76 @@ export default function AdminLogin() {
 
       setTimeout(() => {
         router.push("/admin");
-      }, 500);
+      }, 400);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
+      setError(err instanceof Error ? err.message : "Authentication error");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="bg-white rounded-lg shadow-2xl p-8">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-slate-900 mb-2">
-              Admin Dashboard
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <div className="w-full max-w-md space-y-6">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 space-y-6">
+          <div className="text-center space-y-2">
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-blue-600 text-white font-bold text-2xl shadow-xs">
+              ⚡
+            </div>
+            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
+              Admin Portal
             </h1>
-            <p className="text-slate-600">CronJob.io Administration</p>
+            <p className="text-xs text-slate-500 font-medium">
+              CronJob.io Infrastructure Management
+            </p>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Username
+          <form onSubmit={handleLogin} className="space-y-4 text-xs">
+            <div className="space-y-1">
+              <label className="block font-bold text-slate-700">
+                Admin Username
               </label>
               <input
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 disabled={loading}
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-50"
-                placeholder="Enter username"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                placeholder="Enter administrator username"
                 required
+                autoComplete="username"
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Password
+            <div className="space-y-1">
+              <label className="block font-bold text-slate-700">
+                Admin Password
               </label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={loading}
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-50"
-                placeholder="Enter password"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                placeholder="Enter administrator password"
                 required
+                autoComplete="current-password"
               />
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:bg-slate-400 transition-colors"
+              className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition shadow-xs disabled:opacity-60 cursor-pointer flex items-center justify-center gap-2"
             >
-              {loading ? "Signing in..." : "Sign In"}
+              {loading && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+              {loading ? "Verifying..." : "Sign In to Admin Panel"}
             </button>
           </form>
         </div>
 
-        <p className="text-center text-slate-400 text-sm mt-4">
-          Admin Portal • Secured Access
+        <p className="text-center text-slate-400 text-xs">
+          Restricted access. All login attempts and IP addresses are audited.
         </p>
       </div>
 
@@ -134,7 +140,7 @@ export default function AdminLogin() {
       )}
       {success && (
         <Toast
-          message="Login successful! Redirecting..."
+          message="Authentication successful. Redirecting..."
           type="success"
           onClose={() => setSuccess(false)}
         />

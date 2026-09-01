@@ -2,6 +2,22 @@
 
 import { useState, useEffect } from "react";
 import { Toast } from "@/components/admin/Toast";
+import Link from "next/link";
+
+interface CloudflareMetric {
+  id: string;
+  name: string;
+  label: string;
+  category: "workers" | "d1" | "zone" | "account";
+  current: number | null;
+  limit: number | null;
+  remaining: number | null;
+  percentage: number | null;
+  status: "healthy" | "warning" | "critical" | "unavailable";
+  resetPeriod: string;
+  unit?: string;
+  source?: string;
+}
 
 interface TempMailStats {
   mailboxes: {
@@ -19,9 +35,10 @@ interface TempMailStats {
     totalBytes: number;
     averageEmailSize: number;
   };
-  cloudflareUsage?: {
-    resources?: Record<string, any>;
-  };
+  cloudflare?: {
+    connected?: boolean;
+    resources?: CloudflareMetric[];
+  } | null;
 }
 
 function safeNumber(value: unknown, fallback: number | null = 0): number | null {
@@ -53,45 +70,29 @@ function formatBytes(value: unknown): string {
   return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 2)} ${units[unitIndex]}`;
 }
 
-function StatBox({ label, value, unit, icon }: { label: string; value: string | number; unit?: string; icon: string }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">{label}</p>
-          <p className="mt-2 text-2xl font-bold text-slate-900">
-            {value}
-            {unit ? <span className="ml-1 text-sm text-slate-500">{unit}</span> : null}
-          </p>
-        </div>
-        <span className="text-2xl">{icon}</span>
-      </div>
-    </div>
-  );
-}
-
 export default function TempMailPage() {
   const [stats, setStats] = useState<TempMailStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
-  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
 
   useEffect(() => {
     fetchStats();
-    const interval = setInterval(fetchStats, 30000);
-    return () => clearInterval(interval);
   }, []);
 
   const fetchStats = async () => {
     try {
+      setRefreshing(true);
       const token = localStorage.getItem("adminAuthToken");
       if (!token) return;
 
       const res = await fetch("/api/admin/temp-mail", {
         headers: { Authorization: token },
+        cache: "no-store",
       });
 
-      if (!res.ok) throw new Error("Failed to fetch temp mail stats");
+      if (!res.ok) throw new Error(`Failed to fetch temp mail stats (HTTP ${res.status})`);
 
       const data = await res.json();
       setStats(data);
@@ -102,11 +103,12 @@ export default function TempMailPage() {
       });
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
   const handleCleanup = async () => {
-    if (!confirm("Clean up expired mailboxes?")) return;
+    if (!confirm("Are you sure you want to mark all expired mailboxes as expired?")) return;
 
     try {
       setActionLoading(true);
@@ -125,8 +127,8 @@ export default function TempMailPage() {
       if (!res.ok) throw new Error("Cleanup failed");
 
       const data = await res.json();
-      setToast({ message: data.message, type: "success" });
-      fetchStats();
+      setToast({ message: data.message || "Cleanup completed", type: "success" });
+      await fetchStats();
     } catch (err) {
       setToast({
         message: err instanceof Error ? err.message : "Cleanup failed",
@@ -137,129 +139,198 @@ export default function TempMailPage() {
     }
   };
 
-  const cloudflareResources = stats?.cloudflareUsage?.resources ?? null;
+  const workerMetrics = stats?.cloudflare?.resources?.filter((r) => r.category === "workers") || [];
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="space-y-8 pb-12">
+      {/* Header */}
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="text-sm font-medium uppercase tracking-[0.18em] text-blue-600">Admin</p>
-          <h1 className="mt-1 text-3xl font-bold text-slate-900">Temporary Email</h1>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-blue-600">Temp Mail</span>
+            <span className="text-slate-300">•</span>
+            <span className="text-xs text-slate-500">Service Analytics</span>
+          </div>
+          <h1 className="mt-1 text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
+            Temporary Mail Control
+          </h1>
+          <p className="text-sm text-slate-500 mt-0.5">
+            Monitor disposable mailbox lifecycle, inbound messages, and Cloudflare Worker traffic
+          </p>
         </div>
-        <button
-          onClick={handleCleanup}
-          disabled={actionLoading || loading}
-          className="rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {actionLoading ? "Cleaning..." : "Clean Expired"}
-        </button>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={fetchStats}
+            disabled={refreshing}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs transition disabled:opacity-60 cursor-pointer"
+          >
+            <span className={refreshing ? "animate-spin" : ""}>🔄</span>
+            {refreshing ? "Refreshing..." : "Refresh"}
+          </button>
+          <button
+            onClick={handleCleanup}
+            disabled={actionLoading || loading}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-xs transition disabled:opacity-60 cursor-pointer"
+          >
+            <span>🧹</span>
+            {actionLoading ? "Processing..." : "Prune Expired Mailboxes"}
+          </button>
+        </div>
       </div>
 
       {loading ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500 shadow-sm">Loading temp-mail stats...</div>
+        <div className="flex flex-col items-center justify-center py-20 space-y-3">
+          <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          <div className="text-sm text-slate-500 font-medium">Loading temp-mail metrics...</div>
+        </div>
       ) : !stats ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700 shadow-sm">Failed to load temp mail statistics.</div>
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-800 shadow-xs">
+          Failed to load temporary mail statistics. Please verify backend connection.
+        </div>
       ) : (
-        <>
-          <section className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-slate-900">Mailbox overview</h2>
-            </div>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-              <StatBox label="Total Mailboxes" value={formatNumber(stats.mailboxes.total)} icon="📬" />
-              <StatBox label="Active" value={formatNumber(stats.mailboxes.active)} icon="✅" />
-              <StatBox label="Expired" value={formatNumber(stats.mailboxes.expired)} icon="⏰" />
-              <StatBox label="Deleted" value={formatNumber(stats.mailboxes.deleted)} icon="🗑️" />
-              <StatBox label="Created Today" value={formatNumber(stats.mailboxes.createdToday)} icon="🆕" />
+        <div className="space-y-6">
+          {/* Section 1: Mailboxes Overview */}
+          <section className="space-y-3">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500">Mailbox Lifecycle</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+                <span className="text-xs font-bold text-slate-500 block">Total Mailboxes</span>
+                <span className="text-2xl font-extrabold text-slate-900 mt-1 block">
+                  {formatNumber(stats.mailboxes.total)}
+                </span>
+                <span className="text-[11px] text-slate-400 mt-1 block">All created mailboxes</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+                <span className="text-xs font-bold text-slate-500 block">Active Mailboxes</span>
+                <span className="text-2xl font-extrabold text-emerald-700 mt-1 block">
+                  {formatNumber(stats.mailboxes.active)}
+                </span>
+                <span className="text-[11px] text-slate-400 mt-1 block">Currently accessible</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+                <span className="text-xs font-bold text-slate-500 block">Expired Mailboxes</span>
+                <span className="text-2xl font-extrabold text-amber-700 mt-1 block">
+                  {formatNumber(stats.mailboxes.expired)}
+                </span>
+                <span className="text-[11px] text-slate-400 mt-1 block">Past expiration time</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+                <span className="text-xs font-bold text-slate-500 block">Deleted Mailboxes</span>
+                <span className="text-2xl font-extrabold text-slate-600 mt-1 block">
+                  {formatNumber(stats.mailboxes.deleted)}
+                </span>
+                <span className="text-[11px] text-slate-400 mt-1 block">Replaced by new generation</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+                <span className="text-xs font-bold text-slate-500 block">Created Today</span>
+                <span className="text-2xl font-extrabold text-blue-700 mt-1 block">
+                  {formatNumber(stats.mailboxes.createdToday)}
+                </span>
+                <span className="text-[11px] text-slate-400 mt-1 block">Since 00:00 UTC</span>
+              </div>
             </div>
           </section>
 
-          <section className="space-y-4">
-            <h2 className="text-xl font-semibold text-slate-900">Email overview</h2>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <StatBox label="Total Emails" value={formatNumber(stats.emails.total)} icon="📧" />
-              <StatBox label="Created Today" value={formatNumber(stats.emails.createdToday)} icon="📨" />
-              <StatBox label="Avg Email Size" value={formatBytes(stats.storage.averageEmailSize)} icon="📏" />
+          {/* Section 2: Emails & Storage */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
+              <h3 className="font-bold text-slate-900 border-b border-slate-100 pb-3">Email Messages</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 bg-slate-50 rounded-xl">
+                  <span className="text-xs text-slate-500 block">Total Messages Stored</span>
+                  <span className="text-2xl font-extrabold text-slate-900 mt-1 block">
+                    {formatNumber(stats.emails.total)}
+                  </span>
+                </div>
+                <div className="p-4 bg-slate-50 rounded-xl">
+                  <span className="text-xs text-slate-500 block">Messages Received Today</span>
+                  <span className="text-2xl font-extrabold text-emerald-700 mt-1 block">
+                    {formatNumber(stats.emails.createdToday)}
+                  </span>
+                </div>
+              </div>
             </div>
-          </section>
 
-          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-slate-900">Storage</h2>
-              <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">{formatBytes(stats.storage.totalBytes)}</span>
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
+              <h3 className="font-bold text-slate-900 border-b border-slate-100 pb-3">Storage Consumption</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 bg-slate-50 rounded-xl">
+                  <span className="text-xs text-slate-500 block">Total Email Body Storage</span>
+                  <span className="text-2xl font-extrabold text-slate-900 mt-1 block">
+                    {formatBytes(stats.storage.totalBytes)}
+                  </span>
+                </div>
+                <div className="p-4 bg-slate-50 rounded-xl">
+                  <span className="text-xs text-slate-500 block">Average Message Size</span>
+                  <span className="text-2xl font-extrabold text-slate-900 mt-1 block">
+                    {formatBytes(stats.storage.averageEmailSize)}
+                  </span>
+                </div>
+              </div>
             </div>
-            <div className="mt-4">
-              <p className="text-sm text-slate-500">Total storage used</p>
-              <p className="mt-2 text-3xl font-bold text-slate-900">{formatBytes(stats.storage.totalBytes)}</p>
-              <p className="mt-2 text-sm text-slate-500">{formatNumber(stats.emails.total)} emails stored</p>
-            </div>
-          </section>
+          </div>
 
-          <section className="space-y-4">
-            <h2 className="text-xl font-semibold text-slate-900">Cloudflare Worker Usage</h2>
-            {!cloudflareResources ? (
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 text-slate-500 shadow-sm">Unavailable</div>
+          {/* Section 3: Cloudflare Worker Invocations */}
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="font-bold text-slate-900">Cloudflare Worker Analytics (Temp Mail Microservice)</h3>
+                <p className="text-xs text-slate-500">GraphQL invocations & subrequest activity from Cloudflare</p>
+              </div>
+              <Link
+                href="/admin/settings"
+                className="text-xs font-semibold text-blue-600 hover:text-blue-700"
+              >
+                Settings →
+              </Link>
+            </div>
+
+            {workerMetrics.length === 0 ? (
+              <div className="p-6 bg-slate-50 rounded-xl text-center text-xs text-slate-500">
+                Cloudflare worker analytics unavailable. Ensure credentials are set in environment.
+              </div>
             ) : (
-              <div className="space-y-4">
-                {Object.entries(cloudflareResources).map(([resource, usage]) => {
-                  const resourceData = usage as Record<string, any> | null;
-                  const used = safeNumber(resourceData?.used ?? resourceData?.usage ?? null, null);
-                  const limit = safeNumber(resourceData?.actualLimit ?? resourceData?.limit ?? null, null);
-                  const percentage = used !== null && limit !== null && limit > 0 ? (used / limit) * 100 : null;
-                  const remaining = used !== null && limit !== null ? Math.max(limit - used, 0) : null;
-                  const status = percentage === null ? "Unavailable" : percentage >= 95 ? "Critical" : percentage >= 90 ? "Warning" : "Healthy";
-                  const tone = percentage === null ? "bg-slate-300" : percentage >= 95 ? "bg-red-500" : percentage >= 90 ? "bg-amber-500" : "bg-emerald-500";
-
-                  return (
-                    <div key={resource} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-base font-semibold capitalize text-slate-900">{resource.replace(/_/g, " ")}</p>
-                        <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${percentage === null ? "bg-slate-100 text-slate-700" : percentage >= 95 ? "bg-red-100 text-red-700" : percentage >= 90 ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
-                          {status}
-                        </span>
-                      </div>
-                      <p className="mt-3 text-sm text-slate-600">{used === null ? "Current Usage: Unavailable" : `${formatNumber(used)} / ${limit === null ? "Unavailable" : formatNumber(limit)}`}</p>
-                      <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-slate-200">
-                        <div className={`${tone} h-full rounded-full`} style={{ width: `${percentage === null ? 0 : Math.min(100, percentage)}%` }} />
-                      </div>
-                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-                        <span>Remaining: {remaining === null ? "Unavailable" : formatNumber(remaining)}</span>
-                        <span>{percentage === null ? "Unavailable" : `${percentage.toFixed(2)}% used`}</span>
-                      </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {workerMetrics.map((metric) => (
+                  <div key={metric.id} className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-bold text-slate-700">{metric.label}</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        Active
+                      </span>
                     </div>
-                  );
-                })}
+                    <div className="text-2xl font-extrabold text-slate-900">
+                      {metric.current !== null ? formatNumber(metric.current) : "Unavailable"}
+                    </div>
+                    <p className="text-[11px] text-slate-400">Reset: {metric.resetPeriod}</p>
+                  </div>
+                ))}
               </div>
             )}
           </section>
 
-          <section className="space-y-4">
-            <h2 className="text-xl font-semibold text-slate-900">System status</h2>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <button
-                onClick={() => (window.location.href = "/admin/users")}
-                className="rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-blue-200 hover:shadow-md"
-              >
-                <div className="text-2xl mb-2">👥</div>
-                <div className="font-semibold text-slate-900">Manage User Access</div>
-                <div className="mt-1 text-sm text-slate-500">Disable temp mail per user</div>
-              </button>
-              <button
-                onClick={fetchStats}
-                className="rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-blue-200 hover:shadow-md"
-              >
-                <div className="text-2xl mb-2">🔄</div>
-                <div className="font-semibold text-slate-900">Refresh Stats</div>
-                <div className="mt-1 text-sm text-slate-500">Get latest usage data</div>
-              </button>
-            </div>
-          </section>
-        </>
+          {/* Temp Mail Invariants Info */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs text-xs text-slate-600 space-y-2">
+            <h4 className="font-bold text-slate-800 text-sm">Temp Mail Architecture Principles</h4>
+            <ul className="space-y-1 text-slate-500">
+              <li>• Mailboxes remain active indefinitely until the user explicitly requests a new mailbox.</li>
+              <li>• Generating a new email address automatically deletes the previous mailbox and associated messages.</li>
+              <li>• Inboxes retain the newest 6 messages; older items are automatically pruned.</li>
+              <li>• Messages refresh only on manual user request (no background polling).</li>
+            </ul>
+          </div>
+        </div>
       )}
 
       {toast && (
-        <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
       )}
     </div>
   );
 }
+

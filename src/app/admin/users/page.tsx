@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { Toast } from "@/components/admin/Toast";
 
 interface User {
@@ -27,6 +26,15 @@ interface PaginationData {
   totalPages: number;
 }
 
+function safeNumber(value: unknown, fallback: number = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+}
+
 export default function UsersPage() {
   const searchParams = useSearchParams();
   const [users, setUsers] = useState<User[]>([]);
@@ -45,7 +53,7 @@ export default function UsersPage() {
   const [order, setOrder] = useState("desc");
   const [toast, setToast] = useState<{
     message: string;
-    type: "success" | "error";
+    type: "success" | "error" | "info";
   } | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -71,13 +79,14 @@ export default function UsersPage() {
 
       const res = await fetch(`/api/admin/users?${params}`, {
         headers: { Authorization: token },
+        cache: "no-store",
       });
 
       if (!res.ok) throw new Error("Failed to fetch users");
 
       const data = await res.json();
-      setUsers(data.users);
-      setPagination(data.pagination);
+      setUsers(data.users || []);
+      setPagination(data.pagination || { page: 1, limit: 20, total: 0, totalPages: 0 });
     } catch (err) {
       setToast({
         message: err instanceof Error ? err.message : "Failed to load users",
@@ -107,11 +116,10 @@ export default function UsersPage() {
 
       const data = await res.json();
       setToast({
-        message: data.message,
+        message: data.message || "Action completed successfully",
         type: "success",
       });
 
-      // Refresh users list
       fetchUsers();
       setSelectedUser(null);
     } catch (err) {
@@ -125,7 +133,7 @@ export default function UsersPage() {
   };
 
   const handleDeleteUser = async (userId: string, email: string) => {
-    if (!confirm(`Are you sure you want to delete ${email}? This action is permanent.`)) {
+    if (!confirm(`Are you sure you want to permanently delete ${email}? All user jobs and data will be removed.`)) {
       return;
     }
 
@@ -159,18 +167,29 @@ export default function UsersPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 pb-12">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-white mb-2">User Management</h1>
-        <p className="text-slate-400">View and manage all platform users</p>
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-blue-600">Users</span>
+            <span className="text-slate-300">•</span>
+            <span className="text-xs text-slate-500">{pagination.total} registered</span>
+          </div>
+          <h1 className="mt-1 text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
+            User Management
+          </h1>
+          <p className="text-sm text-slate-500 mt-0.5">
+            Search, inspect, block, or manage permissions for registered user accounts
+          </p>
+        </div>
       </div>
 
-      {/* Filters */}
-      <div className="bg-slate-800 rounded-lg p-4 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      {/* Filters Bar */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div>
-            <label className="block text-sm text-slate-300 mb-2">Search</label>
+            <label className="block text-xs font-bold text-slate-600 mb-1">Search</label>
             <input
               type="text"
               value={search}
@@ -178,126 +197,123 @@ export default function UsersPage() {
                 setSearch(e.target.value);
                 setPagination({ ...pagination, page: 1 });
               }}
-              placeholder="Email or name..."
-              className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Search by name or email..."
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
           <div>
-            <label className="block text-sm text-slate-300 mb-2">Status</label>
+            <label className="block text-xs font-bold text-slate-600 mb-1">Status Filter</label>
             <select
               value={statusFilter}
               onChange={(e) => {
                 setStatusFilter(e.target.value);
                 setPagination({ ...pagination, page: 1 });
               }}
-              className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="">All Status</option>
-              <option value="active">Active</option>
-              <option value="blocked">Blocked</option>
+              <option value="">All Accounts</option>
+              <option value="active">Active Only</option>
+              <option value="blocked">Blocked Only</option>
             </select>
           </div>
 
           <div>
-            <label className="block text-sm text-slate-300 mb-2">Sort By</label>
+            <label className="block text-xs font-bold text-slate-600 mb-1">Sort By</label>
             <select
               value={sort}
               onChange={(e) => {
                 setSort(e.target.value);
                 setPagination({ ...pagination, page: 1 });
               }}
-              className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="createdAt">Created Date</option>
+              <option value="createdAt">Registration Date</option>
               <option value="name">Name</option>
               <option value="email">Email</option>
             </select>
           </div>
 
           <div>
-            <label className="block text-sm text-slate-300 mb-2">Order</label>
+            <label className="block text-xs font-bold text-slate-600 mb-1">Order</label>
             <select
               value={order}
               onChange={(e) => {
                 setOrder(e.target.value);
                 setPagination({ ...pagination, page: 1 });
               }}
-              className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="desc">Descending</option>
-              <option value="asc">Ascending</option>
+              <option value="desc">Newest First</option>
+              <option value="asc">Oldest First</option>
             </select>
           </div>
         </div>
       </div>
 
       {/* Users Table */}
-      <div className="bg-slate-800 rounded-lg overflow-hidden">
+      <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-xs">
         {loading ? (
-          <div className="p-8 text-center text-slate-400">Loading users...</div>
+          <div className="py-16 text-center text-xs text-slate-500 flex flex-col items-center gap-2">
+            <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            Loading user list...
+          </div>
         ) : users.length === 0 ? (
-          <div className="p-8 text-center text-slate-400">No users found</div>
+          <div className="py-16 text-center text-xs text-slate-500">No users match the search criteria.</div>
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-900 border-b border-slate-700">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider">
                   <tr>
-                    <th className="px-6 py-3 text-left text-slate-300 font-semibold">
-                      Email
-                    </th>
-                    <th className="px-6 py-3 text-left text-slate-300 font-semibold">
-                      Name
-                    </th>
-                    <th className="px-6 py-3 text-left text-slate-300 font-semibold">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-left text-slate-300 font-semibold">
-                      Temp Mail
-                    </th>
-                    <th className="px-6 py-3 text-left text-slate-300 font-semibold">
-                      Created
-                    </th>
-                    <th className="px-6 py-3 text-right text-slate-300 font-semibold">
-                      Actions
-                    </th>
+                    <th className="px-5 py-3">User</th>
+                    <th className="px-5 py-3">Status</th>
+                    <th className="px-5 py-3">Temp Mail</th>
+                    <th className="px-5 py-3">Plan</th>
+                    <th className="px-5 py-3">Registered</th>
+                    <th className="px-5 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-700">
+                <tbody className="divide-y divide-slate-100">
                   {users.map((user) => (
-                    <tr key={user._id} className="hover:bg-slate-700 transition-colors">
-                      <td className="px-6 py-4 text-white">{user.email}</td>
-                      <td className="px-6 py-4 text-slate-300">{user.name}</td>
-                      <td className="px-6 py-4">
+                    <tr key={user._id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="px-5 py-3.5">
+                        <div className="font-bold text-slate-900">{user.name || "Anonymous"}</div>
+                        <div className="text-slate-500 font-mono text-[11px]">{user.email}</div>
+                      </td>
+                      <td className="px-5 py-3.5">
                         <span
-                          className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
                             user.status === "active"
-                              ? "bg-green-900 text-green-200"
-                              : "bg-red-900 text-red-200"
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              : "bg-red-50 text-red-700 border-red-200"
                           }`}
                         >
-                          {user.status === "active" ? "✓ Active" : "✗ Blocked"}
+                          <span className={`w-1.5 h-1.5 rounded-full ${user.status === "active" ? "bg-emerald-500" : "bg-red-500"}`} />
+                          {user.status === "active" ? "Active" : "Blocked"}
                         </span>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-5 py-3.5">
                         <span
-                          className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
                             user.tempMailDisabled
-                              ? "bg-red-900 text-red-200"
-                              : "bg-green-900 text-green-200"
+                              ? "bg-red-50 text-red-700 border-red-200"
+                              : "bg-blue-50 text-blue-700 border-blue-200"
                           }`}
                         >
                           {user.tempMailDisabled ? "Disabled" : "Enabled"}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-slate-400 text-xs">
+                      <td className="px-5 py-3.5">
+                        <span className="font-semibold text-slate-700 uppercase text-[11px]">{user.plan || "Free"}</span>
+                      </td>
+                      <td className="px-5 py-3.5 text-slate-500 text-[11px]">
                         {new Date(user.createdAt).toLocaleDateString()}
                       </td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-5 py-3.5 text-right">
                         <button
                           onClick={() => setSelectedUser(user)}
-                          className="text-blue-400 hover:text-blue-300 text-sm font-medium"
+                          className="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition"
                         >
                           Manage
                         </button>
@@ -308,9 +324,9 @@ export default function UsersPage() {
               </table>
             </div>
 
-            {/* Pagination */}
-            <div className="bg-slate-900 border-t border-slate-700 px-6 py-4 flex justify-between items-center">
-              <div className="text-sm text-slate-400">
+            {/* Pagination Footer */}
+            <div className="bg-slate-50 border-t border-slate-200 px-5 py-3 flex items-center justify-between text-xs text-slate-600">
+              <div>
                 Showing {(pagination.page - 1) * pagination.limit + 1} to{" "}
                 {Math.min(pagination.page * pagination.limit, pagination.total)} of{" "}
                 {pagination.total} users
@@ -323,8 +339,8 @@ export default function UsersPage() {
                       page: Math.max(1, pagination.page - 1),
                     })
                   }
-                  disabled={pagination.page === 1}
-                  className="px-4 py-2 bg-slate-700 text-white rounded hover:bg-slate-600 disabled:opacity-50 transition-colors text-sm"
+                  disabled={pagination.page <= 1}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 transition font-medium"
                 >
                   Previous
                 </button>
@@ -335,8 +351,8 @@ export default function UsersPage() {
                       page: Math.min(pagination.totalPages, pagination.page + 1),
                     })
                   }
-                  disabled={pagination.page === pagination.totalPages}
-                  className="px-4 py-2 bg-slate-700 text-white rounded hover:bg-slate-600 disabled:opacity-50 transition-colors text-sm"
+                  disabled={pagination.page >= pagination.totalPages}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 transition font-medium"
                 >
                   Next
                 </button>
@@ -346,57 +362,62 @@ export default function UsersPage() {
         )}
       </div>
 
-      {/* User Detail Modal */}
+      {/* User Management Modal */}
       {selectedUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-800 rounded-lg max-w-md w-full p-6 space-y-4">
-            <div className="flex justify-between items-start">
-              <h2 className="text-xl font-bold text-white">Manage User</h2>
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full p-6 space-y-5">
+            <div className="flex justify-between items-start border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Manage User Account</h3>
+                <p className="text-xs text-slate-500 font-mono mt-0.5">{selectedUser.email}</p>
+              </div>
               <button
                 onClick={() => setSelectedUser(null)}
-                className="text-slate-400 hover:text-white"
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold"
               >
                 ✕
               </button>
             </div>
 
-            <div className="space-y-2 text-sm">
-              <p className="text-slate-300">
-                <strong>Email:</strong> {selectedUser.email}
-              </p>
-              <p className="text-slate-300">
-                <strong>Name:</strong> {selectedUser.name}
-              </p>
-              <p className="text-slate-300">
-                <strong>Status:</strong>{" "}
-                <span
-                  className={
-                    selectedUser.status === "active"
-                      ? "text-green-400"
-                      : "text-red-400"
-                  }
-                >
-                  {selectedUser.status}
+            <div className="space-y-2 text-xs bg-slate-50 p-4 rounded-xl border border-slate-200 text-slate-700">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Name:</span>
+                <span className="font-semibold">{selectedUser.name || "N/A"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Status:</span>
+                <span className={`font-bold ${selectedUser.status === "active" ? "text-emerald-700" : "text-red-700"}`}>
+                  {selectedUser.status.toUpperCase()}
                 </span>
-              </p>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Temp Mail Access:</span>
+                <span className="font-semibold">
+                  {selectedUser.tempMailDisabled ? "Disabled" : "Active"}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Registered:</span>
+                <span>{new Date(selectedUser.createdAt).toLocaleString()}</span>
+              </div>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {selectedUser.status === "active" ? (
                 <button
                   onClick={() => handleUserAction(selectedUser._id, "block")}
                   disabled={actionLoading}
-                  className="w-full px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 transition-colors text-sm font-medium"
+                  className="w-full py-2.5 px-4 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 transition font-semibold text-xs disabled:opacity-50"
                 >
-                  {actionLoading ? "Loading..." : "Block User"}
+                  {actionLoading ? "Processing..." : "Block User (Prevent Sign In)"}
                 </button>
               ) : (
                 <button
                   onClick={() => handleUserAction(selectedUser._id, "unblock")}
                   disabled={actionLoading}
-                  className="w-full px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 transition-colors text-sm font-medium"
+                  className="w-full py-2.5 px-4 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 transition font-semibold text-xs disabled:opacity-50"
                 >
-                  {actionLoading ? "Loading..." : "Unblock User"}
+                  {actionLoading ? "Processing..." : "Unblock User"}
                 </button>
               )}
 
@@ -404,33 +425,32 @@ export default function UsersPage() {
                 <button
                   onClick={() => handleUserAction(selectedUser._id, "enable-temp-mail")}
                   disabled={actionLoading}
-                  className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 transition-colors text-sm font-medium"
+                  className="w-full py-2.5 px-4 rounded-xl border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100 transition font-semibold text-xs disabled:opacity-50"
                 >
-                  {actionLoading ? "Loading..." : "Enable Temp Mail"}
+                  {actionLoading ? "Processing..." : "Enable Temporary Mail Service"}
                 </button>
               ) : (
                 <button
                   onClick={() => handleUserAction(selectedUser._id, "disable-temp-mail")}
                   disabled={actionLoading}
-                  className="w-full px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700 disabled:opacity-50 transition-colors text-sm font-medium"
+                  className="w-full py-2.5 px-4 rounded-xl border border-slate-200 bg-slate-100 text-slate-800 hover:bg-slate-200 transition font-semibold text-xs disabled:opacity-50"
                 >
-                  {actionLoading ? "Loading..." : "Disable Temp Mail"}
+                  {actionLoading ? "Processing..." : "Disable Temporary Mail Service"}
                 </button>
               )}
 
               <button
                 onClick={() => handleDeleteUser(selectedUser._id, selectedUser.email)}
                 disabled={actionLoading}
-                className="w-full px-4 py-2 bg-red-900 text-white rounded hover:bg-red-800 disabled:opacity-50 transition-colors text-sm font-medium"
+                className="w-full py-2.5 px-4 rounded-xl border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition font-semibold text-xs disabled:opacity-50"
               >
-                {actionLoading ? "Loading..." : "Delete User"}
+                {actionLoading ? "Processing..." : "Delete User Account Permanently"}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Toast */}
       {toast && (
         <Toast
           message={toast.message}
@@ -441,3 +461,4 @@ export default function UsersPage() {
     </div>
   );
 }
+

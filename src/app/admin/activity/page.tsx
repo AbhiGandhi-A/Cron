@@ -31,14 +31,14 @@ const actionLabels: Record<string, string> = {
   mailbox_cleaned: "Mailbox Cleaned",
 };
 
-const actionColors: Record<string, string> = {
-  admin_login: "bg-blue-900 text-blue-200",
-  user_blocked: "bg-red-900 text-red-200",
-  user_unblocked: "bg-green-900 text-green-200",
-  temp_mail_disabled: "bg-orange-900 text-orange-200",
-  temp_mail_enabled: "bg-green-900 text-green-200",
-  user_deleted: "bg-red-900 text-red-200",
-  mailbox_cleaned: "bg-purple-900 text-purple-200",
+const actionBadges: Record<string, { bg: string; text: string; border: string }> = {
+  admin_login: { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200" },
+  user_blocked: { bg: "bg-red-50", text: "text-red-700", border: "border-red-200" },
+  user_unblocked: { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200" },
+  temp_mail_disabled: { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200" },
+  temp_mail_enabled: { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200" },
+  user_deleted: { bg: "bg-red-50", text: "text-red-700", border: "border-red-200" },
+  mailbox_cleaned: { bg: "bg-purple-50", text: "text-purple-700", border: "border-purple-200" },
 };
 
 export default function ActivityPage() {
@@ -51,6 +51,7 @@ export default function ActivityPage() {
     totalPages: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [actionFilter, setActionFilter] = useState("");
   const [days, setDays] = useState(7);
 
@@ -60,7 +61,7 @@ export default function ActivityPage() {
 
   const fetchLogs = async () => {
     try {
-      setLoading(true);
+      setRefreshing(true);
       const token = localStorage.getItem("adminAuthToken");
       if (!token) return;
 
@@ -73,160 +74,170 @@ export default function ActivityPage() {
 
       const res = await fetch(`/api/admin/activity?${params}`, {
         headers: { Authorization: token },
+        cache: "no-store",
       });
 
       if (!res.ok) throw new Error("Failed to fetch activity logs");
 
       const data = await res.json();
-      setLogs(data.logs);
-      setPagination(data.pagination);
-      setActions(data.actions);
+      setLogs(data.logs || []);
+      setPagination(data.pagination || { page: 1, limit: 50, total: 0, totalPages: 0 });
+      setActions(data.actions || []);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 pb-12">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-white mb-2">Activity Log</h1>
-        <p className="text-slate-400">View admin action history</p>
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-blue-600">Audit Trail</span>
+            <span className="text-slate-300">•</span>
+            <span className="text-xs text-slate-500">{pagination.total} recorded events</span>
+          </div>
+          <h1 className="mt-1 text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
+            Activity Log
+          </h1>
+          <p className="text-sm text-slate-500 mt-0.5">
+            Immutable record of admin authentications, status overrides, and user management actions
+          </p>
+        </div>
+
+        <button
+          onClick={fetchLogs}
+          disabled={refreshing}
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition disabled:opacity-60 cursor-pointer"
+        >
+          <span className={refreshing ? "animate-spin" : ""}>🔄</span>
+          {refreshing ? "Refreshing..." : "Refresh Logs"}
+        </button>
       </div>
 
       {/* Filters */}
-      <div className="bg-slate-800 rounded-lg p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div>
-          <label className="block text-sm text-slate-300 mb-2">Action</label>
-          <select
-            value={actionFilter}
-            onChange={(e) => {
-              setActionFilter(e.target.value);
-              setPagination({ ...pagination, page: 1 });
-            }}
-            className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">All Actions</option>
-            {actions.map((action) => (
-              <option key={action} value={action}>
-                {actionLabels[action] || action}
-              </option>
-            ))}
-          </select>
-        </div>
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-xs font-bold text-slate-600 mb-1">Filter by Action</label>
+            <select
+              value={actionFilter}
+              onChange={(e) => {
+                setActionFilter(e.target.value);
+                setPagination({ ...pagination, page: 1 });
+              }}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">All Action Types</option>
+              {actions.map((action) => (
+                <option key={action} value={action}>
+                  {actionLabels[action] || action}
+                </option>
+              ))}
+            </select>
+          </div>
 
-        <div>
-          <label className="block text-sm text-slate-300 mb-2">Time Period</label>
-          <select
-            value={days}
-            onChange={(e) => {
-              setDays(parseInt(e.target.value));
-              setPagination({ ...pagination, page: 1 });
-            }}
-            className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value={1}>Last 24 hours</option>
-            <option value={7}>Last 7 days</option>
-            <option value={30}>Last 30 days</option>
-            <option value={90}>Last 90 days</option>
-          </select>
-        </div>
-
-        <div className="flex items-end">
-          <button
-            onClick={fetchLogs}
-            className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm font-medium"
-          >
-            Refresh
-          </button>
+          <div>
+            <label className="block text-xs font-bold text-slate-600 mb-1">Time Period</label>
+            <select
+              value={days}
+              onChange={(e) => {
+                setDays(parseInt(e.target.value, 10));
+                setPagination({ ...pagination, page: 1 });
+              }}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value={1}>Last 24 hours</option>
+              <option value={7}>Last 7 days</option>
+              <option value={30}>Last 30 days</option>
+              <option value={90}>Last 90 days</option>
+            </select>
+          </div>
         </div>
       </div>
 
       {/* Activity Table */}
-      <div className="bg-slate-800 rounded-lg overflow-hidden">
+      <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-xs">
         {loading ? (
-          <div className="p-8 text-center text-slate-400">Loading activity...</div>
+          <div className="py-16 text-center text-xs text-slate-500 flex flex-col items-center gap-2">
+            <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            Loading audit logs...
+          </div>
         ) : logs.length === 0 ? (
-          <div className="p-8 text-center text-slate-400">No activity found</div>
+          <div className="py-16 text-center text-xs text-slate-500">No activity logs found for the selected period.</div>
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-900 border-b border-slate-700">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider">
                   <tr>
-                    <th className="px-6 py-3 text-left text-slate-300 font-semibold">
-                      Time
-                    </th>
-                    <th className="px-6 py-3 text-left text-slate-300 font-semibold">
-                      Action
-                    </th>
-                    <th className="px-6 py-3 text-left text-slate-300 font-semibold">
-                      Admin IP
-                    </th>
-                    <th className="px-6 py-3 text-left text-slate-300 font-semibold">
-                      Target User
-                    </th>
-                    <th className="px-6 py-3 text-left text-slate-300 font-semibold">
-                      Status
-                    </th>
+                    <th className="px-5 py-3">Timestamp</th>
+                    <th className="px-5 py-3">Action</th>
+                    <th className="px-5 py-3">Admin IP</th>
+                    <th className="px-5 py-3">Target User</th>
+                    <th className="px-5 py-3">Status</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-700">
-                  {logs.map((log) => (
-                    <tr key={log._id} className="hover:bg-slate-700 transition-colors">
-                      <td className="px-6 py-4 text-slate-300 text-xs">
-                        {new Date(log.createdAt).toLocaleString()}
-                      </td>
-                      <td className="px-6 py-4">
-                        <span
-                          className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
-                            actionColors[log.action] ||
-                            "bg-slate-700 text-slate-200"
-                          }`}
-                        >
-                          {actionLabels[log.action] || log.action}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-slate-400 text-xs font-mono">
-                        {log.adminIp || "N/A"}
-                      </td>
-                      <td className="px-6 py-4 text-slate-300 text-sm">
-                        {log.targetUserEmail ? (
-                          <div>
-                            <div>{log.targetUserEmail}</div>
-                            <div className="text-xs text-slate-500">
-                              {log.targetUserId?.substring(0, 8)}...
+                <tbody className="divide-y divide-slate-100">
+                  {logs.map((log) => {
+                    const badge = actionBadges[log.action] || { bg: "bg-slate-100", text: "text-slate-700", border: "border-slate-200" };
+                    return (
+                      <tr key={log._id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="px-5 py-3.5 text-slate-600 font-mono text-[11px] whitespace-nowrap">
+                          {new Date(log.createdAt).toLocaleString()}
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <span
+                            className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${badge.bg} ${badge.text} ${badge.border}`}
+                          >
+                            {actionLabels[log.action] || log.action}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3.5 text-slate-500 font-mono text-[11px]">
+                          {log.adminIp || "N/A"}
+                        </td>
+                        <td className="px-5 py-3.5">
+                          {log.targetUserEmail ? (
+                            <div>
+                              <div className="font-semibold text-slate-900">{log.targetUserEmail}</div>
+                              {log.targetUserId && (
+                                <div className="text-[10px] text-slate-400 font-mono">
+                                  {log.targetUserId}
+                                </div>
+                              )}
                             </div>
-                          </div>
-                        ) : (
-                          "N/A"
-                        )}
-                      </td>
-                      <td className="px-6 py-4">
-                        {log.success ? (
-                          <span className="inline-block px-3 py-1 rounded-full text-xs font-medium bg-green-900 text-green-200">
-                            ✓ Success
-                          </span>
-                        ) : (
-                          <span className="inline-block px-3 py-1 rounded-full text-xs font-medium bg-red-900 text-red-200">
-                            ✗ Failed
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                          ) : (
+                            <span className="text-slate-400 italic">System Event</span>
+                          )}
+                        </td>
+                        <td className="px-5 py-3.5">
+                          {log.success ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              <span>✓</span> Success
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-700 border border-red-200">
+                              <span>✗</span> Failed
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
 
-            {/* Pagination */}
-            <div className="bg-slate-900 border-t border-slate-700 px-6 py-4 flex justify-between items-center">
-              <div className="text-sm text-slate-400">
+            {/* Pagination Footer */}
+            <div className="bg-slate-50 border-t border-slate-200 px-5 py-3 flex items-center justify-between text-xs text-slate-600">
+              <div>
                 Showing {(pagination.page - 1) * pagination.limit + 1} to{" "}
                 {Math.min(pagination.page * pagination.limit, pagination.total)} of{" "}
-                {pagination.total} activities
+                {pagination.total} events
               </div>
               <div className="flex gap-2">
                 <button
@@ -236,8 +247,8 @@ export default function ActivityPage() {
                       page: Math.max(1, pagination.page - 1),
                     })
                   }
-                  disabled={pagination.page === 1}
-                  className="px-4 py-2 bg-slate-700 text-white rounded hover:bg-slate-600 disabled:opacity-50 transition-colors text-sm"
+                  disabled={pagination.page <= 1}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 transition font-medium"
                 >
                   Previous
                 </button>
@@ -248,8 +259,8 @@ export default function ActivityPage() {
                       page: Math.min(pagination.totalPages, pagination.page + 1),
                     })
                   }
-                  disabled={pagination.page === pagination.totalPages}
-                  className="px-4 py-2 bg-slate-700 text-white rounded hover:bg-slate-600 disabled:opacity-50 transition-colors text-sm"
+                  disabled={pagination.page >= pagination.totalPages}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 transition font-medium"
                 >
                   Next
                 </button>
@@ -261,3 +272,4 @@ export default function ActivityPage() {
     </div>
   );
 }
+

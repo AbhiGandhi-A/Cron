@@ -11,6 +11,9 @@ export interface ICloudflareConfig extends Document {
   connectionMessage: string;
   lastConnectionTest: Date | null;
   lastUsageFetch: Date | null;
+  workerRequestsDailyLimit: number;
+  d1StorageLimitMb: number;
+  zoneRequestsDailyLimit: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -33,6 +36,9 @@ const CloudflareConfigSchema = new Schema<ICloudflareConfig>(
     },
     lastConnectionTest: { type: Date, default: null },
     lastUsageFetch: { type: Date, default: null },
+    workerRequestsDailyLimit: { type: Number, default: 100000 },
+    d1StorageLimitMb: { type: Number, default: 1000 },
+    zoneRequestsDailyLimit: { type: Number, default: 50000000 },
   },
   { timestamps: true }
 );

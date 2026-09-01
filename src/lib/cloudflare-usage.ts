@@ -1,26 +1,47 @@
+import { getCloudflareConfigFromEnv } from "@/lib/cloudflare-config";
+
 export type CloudflareMetricStatus = "healthy" | "warning" | "critical" | "unavailable";
 
 export interface CloudflareAccountRef {
   id: string;
   name: string | null;
+  type?: string | null;
 }
 
 export interface CloudflareZoneRef {
   id: string;
   name: string | null;
+  status?: string | null;
+  plan?: string | null;
+}
+
+export interface CloudflareWorkerRef {
+  name: string | null;
+  scriptId?: string | null;
+  modifiedOn?: string | null;
+}
+
+export interface CloudflareD1Ref {
+  id: string | null;
+  name: string | null;
+  numTables?: number | null;
+  fileSize?: number | null;
 }
 
 export interface CloudflareMetric {
   id: string;
   name: string;
   label: string;
+  category: "workers" | "d1" | "zone" | "account";
   current: number | null;
   limit: number | null;
   remaining: number | null;
   percentage: number | null;
   status: CloudflareMetricStatus;
-  reset: string;
+  resetPeriod: string;
   unit?: string;
+  source: string;
+  description?: string;
 }
 
 export interface CloudflareUsageResponse {
@@ -29,12 +50,15 @@ export interface CloudflareUsageResponse {
   configured: boolean;
   account: CloudflareAccountRef | null;
   zone: CloudflareZoneRef | null;
+  worker: CloudflareWorkerRef | null;
+  d1: CloudflareD1Ref | null;
   lastUpdated: string;
   message?: string;
+  error?: string | null;
   resources: CloudflareMetric[];
 }
 
-function safeNumber(value: unknown, fallback: number | null = null): number | null {
+export function safeNumber(value: unknown, fallback: number | null = null): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim() !== "") {
     const parsed = Number(value);
@@ -43,32 +67,64 @@ function safeNumber(value: unknown, fallback: number | null = null): number | nu
   return fallback;
 }
 
-function computeDerivedMetrics(usage: number | null, limit: number | null) {
-  if (usage === null || limit === null || limit <= 0) {
+export function computeDerivedMetrics(usage: number | null, limit: number | null): {
+  remaining: number | null;
+  percentage: number | null;
+} {
+  if (
+    usage === null ||
+    limit === null ||
+    limit <= 0 ||
+    !Number.isFinite(usage) ||
+    !Number.isFinite(limit)
+  ) {
     return { remaining: null, percentage: null };
   }
 
-  const remaining = limit >= usage ? Math.max(limit - usage, 0) : null;
+  const remaining = limit >= usage ? Math.max(limit - usage, 0) : 0;
   const percentage = (usage / limit) * 100;
 
   return {
     remaining,
-    percentage,
+    percentage: Number.isFinite(percentage) ? percentage : null,
   };
 }
 
-function buildMetric(
-  id: string,
-  name: string,
-  usage: number | null,
-  limit: number | null,
-  reset: string,
-  unit?: string
-): CloudflareMetric {
+export function buildMetric(options: {
+  id: string;
+  name: string;
+  label: string;
+  category: "workers" | "d1" | "zone" | "account";
+  usage: number | null;
+  limit: number | null;
+  resetPeriod?: string;
+  unit?: string;
+  source: string;
+  description?: string;
+  forcedStatus?: CloudflareMetricStatus;
+}): CloudflareMetric {
+  const {
+    id,
+    name,
+    label,
+    category,
+    usage,
+    limit,
+    resetPeriod = "Daily",
+    unit,
+    source,
+    description,
+    forcedStatus,
+  } = options;
+
   const { remaining, percentage } = computeDerivedMetrics(usage, limit);
 
   let status: CloudflareMetricStatus = "unavailable";
-  if (usage !== null && limit !== null && percentage !== null) {
+  if (forcedStatus) {
+    status = forcedStatus;
+  } else if (usage === null) {
+    status = "unavailable";
+  } else if (percentage !== null) {
     if (percentage >= 95) {
       status = "critical";
     } else if (percentage >= 90) {
@@ -76,26 +132,40 @@ function buildMetric(
     } else {
       status = "healthy";
     }
+  } else {
+    // Usage is a valid number, but limit is unavailable from Cloudflare
+    status = "healthy";
   }
 
   return {
     id,
     name,
-    label: name,
+    label,
+    category,
     current: usage,
     limit,
     remaining,
     percentage,
     status,
-    reset,
+    resetPeriod,
     unit,
+    source,
+    description,
   };
 }
 
-async function fetchJson<T>(path: string, token: string, init?: RequestInit): Promise<T | null> {
+async function fetchJson<T>(
+  path: string,
+  token: string,
+  init?: RequestInit
+): Promise<{ ok: boolean; status: number; data: T | null; error?: string }> {
   try {
-    const response = await fetch(`${"https://api.cloudflare.com/client/v4"}${path}`, {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
+    const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
       ...init,
+      signal: controller.signal,
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
@@ -104,22 +174,36 @@ async function fetchJson<T>(path: string, token: string, init?: RequestInit): Pr
       cache: "no-store",
     });
 
-    if (!response.ok) return null;
-    return (await response.json()) as T;
-  } catch {
-    return null;
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => null);
+      const errMsg =
+        errBody?.errors?.[0]?.message ||
+        `Cloudflare API error (${response.status}: ${response.statusText})`;
+      return { ok: false, status: response.status, data: null, error: errMsg };
+    }
+
+    const data = (await response.json()) as T;
+    return { ok: true, status: response.status, data };
+  } catch (err) {
+    return {
+      ok: false,
+      status: 0,
+      data: null,
+      error: err instanceof Error ? err.message : "Network error contacting Cloudflare API",
+    };
   }
 }
 
 export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse> {
-  // Read config from database first, then fall back to environment
-  const { getCloudflareRuntimeConfig } = await import("@/lib/cloudflare-config");
-  const config = await getCloudflareRuntimeConfig();
-  
+  const config = getCloudflareConfigFromEnv();
+
   const token = config.apiToken.trim();
   const accountId = config.accountId.trim();
   const zoneId = config.zoneId.trim();
   const d1DatabaseId = config.d1DatabaseId.trim();
+  const workerName = config.workerName.trim();
   const lastUpdated = new Date().toISOString();
 
   if (!token || !accountId) {
@@ -129,119 +213,514 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
       configured: false,
       account: null,
       zone: zoneId ? { id: zoneId, name: null } : null,
+      worker: workerName ? { name: workerName } : null,
+      d1: d1DatabaseId ? { id: d1DatabaseId, name: null } : null,
       lastUpdated,
       message: "Cloudflare Configuration Required",
+      error: "Missing CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_API_TOKEN in environment",
       resources: [],
     };
   }
 
-  const accountInfo = await fetchJson<{ result?: { id?: string; name?: string } }>(`/accounts/${encodeURIComponent(accountId)}`, token);
-  const zoneInfo = zoneId ? await fetchJson<{ result?: { id?: string; name?: string } }>(`/zones/${encodeURIComponent(zoneId)}`, token) : null;
+  // 1. Verify and retrieve Account details
+  const accountRes = await fetchJson<{
+    result?: { id?: string; name?: string; type?: string };
+    errors?: Array<{ message: string }>;
+  }>(`/accounts/${encodeURIComponent(accountId)}`, token);
 
-  if (!accountInfo?.result?.id) {
+  if (!accountRes.ok || !accountRes.data?.result?.id) {
+    const errorMsg =
+      accountRes.status === 401 || accountRes.status === 403
+        ? "Unauthorized: Invalid CLOUDFLARE_API_TOKEN or insufficient permissions"
+        : accountRes.status === 404
+        ? `Account not found: ${accountId}`
+        : accountRes.error || "Failed to authenticate with Cloudflare API";
+
     return {
       connected: false,
       available: false,
       configured: true,
       account: { id: accountId, name: null },
       zone: zoneId ? { id: zoneId, name: null } : null,
+      worker: workerName ? { name: workerName } : null,
+      d1: d1DatabaseId ? { id: d1DatabaseId, name: null } : null,
       lastUpdated,
       message: "Cloudflare Authentication Failed",
+      error: errorMsg,
       resources: [],
     };
   }
 
+  const accountRef: CloudflareAccountRef = {
+    id: accountId,
+    name: accountRes.data.result.name ?? null,
+    type: accountRes.data.result.type ?? null,
+  };
+
   const resources: CloudflareMetric[] = [];
 
-  // Fetch Workers usage
-  const start = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const end = new Date().toISOString();
-  
-  const workerQuery = `query {
+  // 2. Query Workers Usage & Analytics (GraphQL)
+  const now = new Date();
+  const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const startIso = oneDayAgo.toISOString();
+  const endIso = now.toISOString();
+
+  const workerQuery = `query GetWorkerAnalytics($accountTag: string!, $datetimeStart: string!, $datetimeEnd: string!) {
     viewer {
-      accounts(filter: {accountTag: "${accountId}"}) {
-        workersInvocationsAdaptive(limit: 10000, filter: {datetime_geq: "${start}", datetime_leq: "${end}"}) {
-          sum { requests }
+      accounts(filter: { accountTag: $accountTag }) {
+        workersInvocationsAdaptive(
+          limit: 10000,
+          filter: { datetime_geq: $datetimeStart, datetime_leq: $datetimeEnd }
+        ) {
+          sum {
+            requests
+            errors
+            subrequests
+          }
         }
       }
     }
   }`;
 
-  const graphql = await fetchJson<{ data?: { viewer?: { accounts?: Array<{ workersInvocationsAdaptive?: { sum?: { requests?: unknown } } }> } } }>(`/graphql`, token, {
+  const workerGraphqlRes = await fetchJson<{
+    data?: {
+      viewer?: {
+        accounts?: Array<{
+          workersInvocationsAdaptive?: Array<{
+            sum?: {
+              requests?: unknown;
+              errors?: unknown;
+              subrequests?: unknown;
+            };
+          }>;
+        }>;
+      };
+    };
+  }>("/graphql", token, {
     method: "POST",
-    body: JSON.stringify({ query: workerQuery }),
+    body: JSON.stringify({
+      query: workerQuery,
+      variables: {
+        accountTag: accountId,
+        datetimeStart: startIso,
+        datetimeEnd: endIso,
+      },
+    }),
   });
 
-  const workersUsage = graphql?.data?.viewer?.accounts?.[0]?.workersInvocationsAdaptive?.sum?.requests;
-  const workerLimit = safeNumber(process.env.CLOUDFLARE_WORKER_REQUESTS_DAILY_LIMIT, null);
+  const workerInvocations =
+    workerGraphqlRes.data?.data?.viewer?.accounts?.[0]?.workersInvocationsAdaptive;
 
-  resources.push(
-    buildMetric(
-      "workers_requests",
-      "Workers Requests",
-      safeNumber(workersUsage, null),
-      workerLimit,
-      "Daily",
-      "requests"
-    )
-  );
+  let totalWorkerRequests: number | null = null;
+  let totalWorkerErrors: number | null = null;
+  let totalWorkerSubrequests: number | null = null;
 
-  // Fetch D1 Database usage if configured
-  if (d1DatabaseId) {
-    const d1Info = await fetchJson<{ result?: { size_bytes?: unknown; created_on?: string } }>(`/accounts/${encodeURIComponent(accountId)}/d1/database/${encodeURIComponent(d1DatabaseId)}`, token);
-    
-    if (d1Info?.result) {
-      const d1SizeBytes = safeNumber(d1Info.result.size_bytes, null);
-      const d1Limit = safeNumber(process.env.CLOUDFLARE_D1_STORAGE_LIMIT_MB, null);
-      let d1LimitBytes: number | null = null;
-      if (d1Limit !== null && d1Limit > 0) {
-        d1LimitBytes = d1Limit * 1024 * 1024; // Convert MB to bytes
+  if (Array.isArray(workerInvocations)) {
+    let reqSum = 0;
+    let errSum = 0;
+    let subSum = 0;
+    let hasValidItem = false;
+
+    for (const item of workerInvocations) {
+      if (item.sum) {
+        hasValidItem = true;
+        reqSum += safeNumber(item.sum.requests, 0) || 0;
+        errSum += safeNumber(item.sum.errors, 0) || 0;
+        subSum += safeNumber(item.sum.subrequests, 0) || 0;
       }
+    }
 
-      resources.push(
-        buildMetric(
-          "d1_storage",
-          "D1 Database Storage",
-          d1SizeBytes,
-          d1LimitBytes,
-          "Plan Limit",
-          "bytes"
-        )
-      );
+    if (hasValidItem) {
+      totalWorkerRequests = reqSum;
+      totalWorkerErrors = errSum;
+      totalWorkerSubrequests = subSum;
     }
   }
 
-  // Fetch Zone analytics if configured
-  if (zoneId) {
-    // Zone requests (requires Logpush or GraphQL analytics)
-    const zoneAnalyticsQuery = `query {
+  // Worker Requests Metric
+  resources.push(
+    buildMetric({
+      id: "worker_requests",
+      name: "Worker Requests",
+      label: "Worker Requests (24h)",
+      category: "workers",
+      usage: totalWorkerRequests,
+      limit: null, // Cloudflare GraphQL analytics does not expose static plan quotas dynamically; strictly marked Unavailable
+      resetPeriod: "Last 24 Hours",
+      unit: "requests",
+      source: "Cloudflare GraphQL: workersInvocationsAdaptive.sum.requests",
+      description: "Total worker invocations processed across your account in the last 24 hours.",
+    })
+  );
+
+  // Worker Errors Metric
+  if (totalWorkerErrors !== null) {
+    resources.push(
+      buildMetric({
+        id: "worker_errors",
+        name: "Worker Errors",
+        label: "Worker Errors (24h)",
+        category: "workers",
+        usage: totalWorkerErrors,
+        limit: null,
+        resetPeriod: "Last 24 Hours",
+        unit: "errors",
+        source: "Cloudflare GraphQL: workersInvocationsAdaptive.sum.errors",
+        description: "Invocations that resulted in an uncaught runtime exception.",
+        forcedStatus:
+          totalWorkerRequests && totalWorkerErrors / totalWorkerRequests > 0.05
+            ? "critical"
+            : totalWorkerErrors > 0
+            ? "warning"
+            : "healthy",
+      })
+    );
+  }
+
+  // Worker Subrequests Metric
+  if (totalWorkerSubrequests !== null) {
+    resources.push(
+      buildMetric({
+        id: "worker_subrequests",
+        name: "Worker Subrequests",
+        label: "Worker Subrequests (24h)",
+        category: "workers",
+        usage: totalWorkerSubrequests,
+        limit: null,
+        resetPeriod: "Last 24 Hours",
+        unit: "subrequests",
+        source: "Cloudflare GraphQL: workersInvocationsAdaptive.sum.subrequests",
+        description: "Outbound fetch calls made by your workers in the last 24 hours.",
+      })
+    );
+  }
+
+  // 3. Worker Script Details (REST)
+  let workerRef: CloudflareWorkerRef | null = workerName ? { name: workerName } : null;
+  if (workerName) {
+    const workerScriptRes = await fetchJson<{
+      result?: { id?: string; modified_on?: string; created_on?: string };
+    }>(`/accounts/${encodeURIComponent(accountId)}/workers/scripts/${encodeURIComponent(workerName)}`, token);
+
+    if (workerScriptRes.ok && workerScriptRes.data?.result) {
+      workerRef = {
+        name: workerName,
+        scriptId: workerScriptRes.data.result.id ?? workerName,
+        modifiedOn: workerScriptRes.data.result.modified_on ?? null,
+      };
+    }
+  }
+
+  // 4. Query D1 Database Details & Analytics
+  let d1Ref: CloudflareD1Ref | null = d1DatabaseId ? { id: d1DatabaseId, name: null } : null;
+  if (d1DatabaseId) {
+    const d1InfoRes = await fetchJson<{
+      result?: {
+        uuid?: string;
+        name?: string;
+        file_size?: unknown;
+        size_bytes?: unknown;
+        num_tables?: unknown;
+        created_at?: string;
+        version?: string;
+      };
+    }>(`/accounts/${encodeURIComponent(accountId)}/d1/database/${encodeURIComponent(d1DatabaseId)}`, token);
+
+    if (d1InfoRes.ok && d1InfoRes.data?.result) {
+      const d1Res = d1InfoRes.data.result;
+      const d1SizeBytes = safeNumber(d1Res.file_size ?? d1Res.size_bytes, null);
+      const numTables = safeNumber(d1Res.num_tables, null);
+
+      d1Ref = {
+        id: d1Res.uuid || d1DatabaseId,
+        name: d1Res.name || null,
+        numTables,
+        fileSize: d1SizeBytes,
+      };
+
+      // D1 Storage Metric
+      resources.push(
+        buildMetric({
+          id: "d1_storage",
+          name: "D1 Database Storage",
+          label: "D1 Storage Size",
+          category: "d1",
+          usage: d1SizeBytes,
+          limit: null, // Plan limit is not returned dynamically by D1 REST API; marked Unavailable
+          resetPeriod: "Total Size",
+          unit: "bytes",
+          source: "Cloudflare D1 REST: /accounts/{id}/d1/database/{id} file_size",
+          description: `Current physical storage used by D1 database ${d1Res.name || d1DatabaseId}.`,
+        })
+      );
+    } else {
+      // D1 database not accessible or not found
+      resources.push(
+        buildMetric({
+          id: "d1_storage",
+          name: "D1 Database Storage",
+          label: "D1 Storage Size",
+          category: "d1",
+          usage: null,
+          limit: null,
+          resetPeriod: "Total Size",
+          unit: "bytes",
+          source: "Cloudflare D1 REST: /accounts/{id}/d1/database/{id}",
+          description: "Database details unavailable from Cloudflare.",
+        })
+      );
+    }
+
+    // Try D1 Analytics (GraphQL)
+    const d1AnalyticsQuery = `query GetD1Analytics($accountTag: string!, $datetimeStart: string!, $datetimeEnd: string!) {
       viewer {
-        zones(filter: {zoneTag: "${zoneId}"}) {
-          httpRequests1dGroups(limit: 1, filter: {date_geq: "${start.split('T')[0]}", date_leq: "${end.split('T')[0]}"}) {
-            sum { requests }
+        accounts(filter: { accountTag: $accountTag }) {
+          d1AnalyticsAdaptiveGroups(
+            limit: 1000,
+            filter: { datetime_geq: $datetimeStart, datetime_leq: $datetimeEnd }
+          ) {
+            sum {
+              readQueries
+              writeQueries
+              rowsRead
+              rowsWritten
+            }
           }
         }
       }
     }`;
 
-    const zoneGraphql = await fetchJson<{ data?: { viewer?: { zones?: Array<{ httpRequests1dGroups?: Array<{ sum?: { requests?: unknown } }> }> } } }>(`/graphql`, token, {
+    const d1GraphqlRes = await fetchJson<{
+      data?: {
+        viewer?: {
+          accounts?: Array<{
+            d1AnalyticsAdaptiveGroups?: Array<{
+              sum?: {
+                readQueries?: unknown;
+                writeQueries?: unknown;
+                rowsRead?: unknown;
+                rowsWritten?: unknown;
+              };
+            }>;
+          }>;
+        };
+      };
+    }>("/graphql", token, {
       method: "POST",
-      body: JSON.stringify({ query: zoneAnalyticsQuery }),
+      body: JSON.stringify({
+        query: d1AnalyticsQuery,
+        variables: {
+          accountTag: accountId,
+          datetimeStart: startIso,
+          datetimeEnd: endIso,
+        },
+      }),
     });
 
-    const zoneRequests = zoneGraphql?.data?.viewer?.zones?.[0]?.httpRequests1dGroups?.[0]?.sum?.requests;
-    
-    if (zoneRequests !== undefined && zoneRequests !== null) {
-      const zoneRequestLimit = safeNumber(process.env.CLOUDFLARE_ZONE_REQUESTS_DAILY_LIMIT, null);
+    const d1Groups =
+      d1GraphqlRes.data?.data?.viewer?.accounts?.[0]?.d1AnalyticsAdaptiveGroups;
+
+    let d1RowsRead: number | null = null;
+    let d1RowsWritten: number | null = null;
+
+    if (Array.isArray(d1Groups)) {
+      let rSum = 0;
+      let wSum = 0;
+      let valid = false;
+      for (const g of d1Groups) {
+        if (g.sum) {
+          valid = true;
+          rSum += safeNumber(g.sum.rowsRead, 0) || 0;
+          wSum += safeNumber(g.sum.rowsWritten, 0) || 0;
+        }
+      }
+      if (valid) {
+        d1RowsRead = rSum;
+        d1RowsWritten = wSum;
+      }
+    }
+
+    // D1 Rows Read Metric
+    resources.push(
+      buildMetric({
+        id: "d1_rows_read",
+        name: "D1 Rows Read",
+        label: "D1 Rows Read (24h)",
+        category: "d1",
+        usage: d1RowsRead,
+        limit: null,
+        resetPeriod: "Last 24 Hours",
+        unit: "rows",
+        source: "Cloudflare GraphQL: d1AnalyticsAdaptiveGroups.sum.rowsRead",
+        description: "Total rows read across queries in the last 24 hours.",
+      })
+    );
+
+    // D1 Rows Written Metric
+    resources.push(
+      buildMetric({
+        id: "d1_rows_written",
+        name: "D1 Rows Written",
+        label: "D1 Rows Written (24h)",
+        category: "d1",
+        usage: d1RowsWritten,
+        limit: null,
+        resetPeriod: "Last 24 Hours",
+        unit: "rows",
+        source: "Cloudflare GraphQL: d1AnalyticsAdaptiveGroups.sum.rowsWritten",
+        description: "Total rows inserted, updated, or deleted in the last 24 hours.",
+      })
+    );
+  }
+
+  // 5. Query Zone Details & Analytics
+  let zoneRef: CloudflareZoneRef | null = zoneId ? { id: zoneId, name: null } : null;
+  if (zoneId) {
+    const zoneInfoRes = await fetchJson<{
+      result?: {
+        id?: string;
+        name?: string;
+        status?: string;
+        plan?: { name?: string };
+      };
+    }>(`/zones/${encodeURIComponent(zoneId)}`, token);
+
+    if (zoneInfoRes.ok && zoneInfoRes.data?.result) {
+      const zRes = zoneInfoRes.data.result;
+      zoneRef = {
+        id: zRes.id || zoneId,
+        name: zRes.name || null,
+        status: zRes.status || null,
+        plan: zRes.plan?.name || null,
+      };
+    }
+
+    // Zone Analytics (GraphQL)
+    const dateStart = startIso.split("T")[0];
+    const dateEnd = endIso.split("T")[0];
+
+    const zoneAnalyticsQuery = `query GetZoneAnalytics($zoneTag: string!, $dateStart: string!, $dateEnd: string!) {
+      viewer {
+        zones(filter: { zoneTag: $zoneTag }) {
+          httpRequests1dGroups(
+            limit: 10,
+            filter: { date_geq: $dateStart, date_leq: $dateEnd }
+          ) {
+            sum {
+              requests
+              bytes
+              cachedRequests
+              cachedBytes
+              pageViews
+            }
+          }
+        }
+      }
+    }`;
+
+    const zoneGraphqlRes = await fetchJson<{
+      data?: {
+        viewer?: {
+          zones?: Array<{
+            httpRequests1dGroups?: Array<{
+              sum?: {
+                requests?: unknown;
+                bytes?: unknown;
+                cachedRequests?: unknown;
+                cachedBytes?: unknown;
+                pageViews?: unknown;
+              };
+            }>;
+          }>;
+        };
+      };
+    }>("/graphql", token, {
+      method: "POST",
+      body: JSON.stringify({
+        query: zoneAnalyticsQuery,
+        variables: {
+          zoneTag: zoneId,
+          dateStart,
+          dateEnd,
+        },
+      }),
+    });
+
+    const zoneGroups =
+      zoneGraphqlRes.data?.data?.viewer?.zones?.[0]?.httpRequests1dGroups;
+
+    let zoneRequests: number | null = null;
+    let zoneBandwidth: number | null = null;
+    let zoneCachedRequests: number | null = null;
+
+    if (Array.isArray(zoneGroups)) {
+      let reqSum = 0;
+      let bytesSum = 0;
+      let cachedSum = 0;
+      let valid = false;
+
+      for (const g of zoneGroups) {
+        if (g.sum) {
+          valid = true;
+          reqSum += safeNumber(g.sum.requests, 0) || 0;
+          bytesSum += safeNumber(g.sum.bytes, 0) || 0;
+          cachedSum += safeNumber(g.sum.cachedRequests, 0) || 0;
+        }
+      }
+
+      if (valid) {
+        zoneRequests = reqSum;
+        zoneBandwidth = bytesSum;
+        zoneCachedRequests = cachedSum;
+      }
+    }
+
+    resources.push(
+      buildMetric({
+        id: "zone_requests",
+        name: "Zone HTTP Requests",
+        label: "Zone Requests (24h)",
+        category: "zone",
+        usage: zoneRequests,
+        limit: null, // Unmetered on Cloudflare CDN; quota is Unavailable
+        resetPeriod: "Last 24 Hours",
+        unit: "requests",
+        source: "Cloudflare GraphQL: httpRequests1dGroups.sum.requests",
+        description: `Inbound HTTP traffic delivered to zone ${zoneRef?.name || zoneId}.`,
+      })
+    );
+
+    if (zoneBandwidth !== null) {
       resources.push(
-        buildMetric(
-          "zone_requests",
-          "Zone Requests",
-          safeNumber(zoneRequests, null),
-          zoneRequestLimit,
-          "Daily",
-          "requests"
-        )
+        buildMetric({
+          id: "zone_bandwidth",
+          name: "Zone Bandwidth",
+          label: "Bandwidth Transferred (24h)",
+          category: "zone",
+          usage: zoneBandwidth,
+          limit: null,
+          resetPeriod: "Last 24 Hours",
+          unit: "bytes",
+          source: "Cloudflare GraphQL: httpRequests1dGroups.sum.bytes",
+          description: "Total bytes transferred via Cloudflare CDN in the last 24 hours.",
+        })
+      );
+    }
+
+    if (zoneCachedRequests !== null) {
+      resources.push(
+        buildMetric({
+          id: "zone_cached_requests",
+          name: "Cached Requests",
+          label: "Cached Requests (24h)",
+          category: "zone",
+          usage: zoneCachedRequests,
+          limit: null,
+          resetPeriod: "Last 24 Hours",
+          unit: "requests",
+          source: "Cloudflare GraphQL: httpRequests1dGroups.sum.cachedRequests",
+          description: "Edge-cached requests served without origin roundtrip.",
+        })
       );
     }
   }
@@ -250,19 +729,14 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
     connected: true,
     available: true,
     configured: true,
-    account: {
-      id: accountId,
-      name: accountInfo.result?.name ?? null,
-    },
-    zone: zoneId
-      ? {
-          id: zoneId,
-          name: zoneInfo?.result?.name ?? null,
-        }
-      : null,
+    account: accountRef,
+    zone: zoneRef,
+    worker: workerRef,
+    d1: d1Ref,
     lastUpdated,
-    message: "Cloudflare usage loaded successfully.",
+    message: "Cloudflare metrics loaded successfully.",
     resources,
   };
 }
+
 

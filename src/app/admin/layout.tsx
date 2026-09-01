@@ -70,8 +70,11 @@ export default function AdminLayout({ children }: LayoutProps) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-        <div className="text-white">Loading...</div>
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="flex items-center gap-3 text-slate-600 font-medium">
+          <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          Loading Admin Panel...
+        </div>
       </div>
     );
   }
@@ -83,84 +86,105 @@ export default function AdminLayout({ children }: LayoutProps) {
   if (!isAuthenticated) {
     return null;
   }
-  if (isLoginPage) {
-    return children;
-  }
 
   const navItems = [
     { label: "Dashboard", href: "/admin", icon: "📊" },
     { label: "Users", href: "/admin/users", icon: "👥" },
     { label: "Temp Mail", href: "/admin/temp-mail", icon: "📧" },
-    { label: "Activity", href: "/admin/activity", icon: "📋" },
-    { label: "Health", href: "/admin/health", icon: "❤️" },
+    { label: "Activity Log", href: "/admin/activity", icon: "📋" },
+    { label: "System Health", href: "/admin/health", icon: "❤️" },
     { label: "Settings", href: "/admin/settings", icon: "⚙️" },
   ];
 
+  const currentNav = navItems.find((n) => n.href === pathname)?.label || "Admin";
+
   return (
-    <div className="flex h-screen bg-slate-900">
+    <div className="flex h-screen bg-slate-50 text-slate-900 font-sans antialiased overflow-hidden">
       {/* Sidebar */}
-      <div
+      <aside
         className={`${
           sidebarOpen ? "w-64" : "w-20"
-        } bg-slate-800 border-r border-slate-700 transition-all duration-200 flex flex-col`}
+        } bg-white border-r border-slate-200 transition-all duration-200 flex flex-col z-20 shadow-sm`}
       >
-        {/* Logo */}
-        <div className="p-4 border-b border-slate-700">
-          <div className="text-white font-bold text-xl">
-            {sidebarOpen ? "CronJob Admin" : "CA"}
-          </div>
+        {/* Brand */}
+        <div className="h-16 px-5 border-b border-slate-200 flex items-center justify-between">
+          <Link href="/admin" className="flex items-center gap-2.5 overflow-hidden">
+            <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-lg shadow-sm shrink-0">
+              ⚡
+            </div>
+            {sidebarOpen && (
+              <div className="truncate">
+                <div className="font-bold text-slate-900 leading-tight">CronJob.io</div>
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-blue-600">Admin SaaS</div>
+              </div>
+            )}
+          </Link>
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 p-4 space-y-2">
+        <nav className="flex-1 p-3 space-y-1.5 overflow-y-auto">
           {navItems.map((item) => {
             const isActive = pathname === item.href;
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${
+                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors ${
                   isActive
-                    ? "bg-blue-600 text-white"
-                    : "text-slate-400 hover:bg-slate-700 hover:text-white"
+                    ? "bg-blue-50 text-blue-700 font-semibold shadow-xs"
+                    : "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900"
                 }`}
               >
-                <span className="text-xl">{item.icon}</span>
-                {sidebarOpen && <span>{item.label}</span>}
+                <span className="text-lg shrink-0">{item.icon}</span>
+                {sidebarOpen && <span className="truncate">{item.label}</span>}
               </Link>
             );
           })}
         </nav>
 
-        {/* Toggle button */}
-        <div className="p-4 border-t border-slate-700">
+        {/* User / Collapse footer */}
+        <div className="p-3 border-t border-slate-200 space-y-2">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="w-full px-4 py-2 text-slate-400 hover:text-white text-sm transition-colors"
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+            title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
           >
-            {sidebarOpen ? "← Collapse" : "→"}
+            <span>{sidebarOpen ? "← Collapse Sidebar" : "→"}</span>
           </button>
         </div>
-      </div>
+      </aside>
 
-      {/* Main content */}
-      <div className="flex-1 flex flex-col">
-        {/* Header */}
-        <header className="bg-slate-800 border-b border-slate-700 px-6 py-4 flex justify-between items-center">
-          <h1 className="text-white text-2xl font-bold">Admin Panel</h1>
-          <button
-            onClick={handleLogout}
-            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
-          >
-            Logout
-          </button>
+      {/* Main Container */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header */}
+        <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between z-10 shrink-0">
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-bold text-slate-900">{currentNav}</h2>
+            <span className="hidden sm:inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+              Admin Portal
+            </span>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className="hidden md:flex items-center gap-2 text-xs text-slate-500">
+              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+              Session Active
+            </div>
+            <button
+              onClick={handleLogout}
+              className="px-3.5 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 hover:border-red-300 transition-colors text-xs font-semibold shadow-xs"
+            >
+              Sign Out
+            </button>
+          </div>
         </header>
 
-        {/* Content area */}
-        <main className="flex-1 overflow-auto bg-slate-900 p-6">
-          {children}
+        {/* Content Workspace */}
+        <main className="flex-1 overflow-y-auto bg-slate-50/70 p-6 md:p-8">
+          <div className="max-w-7xl mx-auto">{children}</div>
         </main>
       </div>
     </div>
   );
 }
+

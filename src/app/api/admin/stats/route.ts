@@ -14,10 +14,6 @@ function safeNumber(value: unknown, fallback: number | null = 0): number | null 
   return fallback;
 }
 
-async function fetchCloudflareUsage() {
-  return getCloudflareUsageData();
-}
-
 export async function GET(req: NextRequest) {
   const authError = requireAdminAuth(req);
   if (authError) return authError;
@@ -33,7 +29,7 @@ export async function GET(req: NextRequest) {
     const blockedUsers = await User.countDocuments({ status: "blocked" });
 
     const totalMailboxes = await TemporaryMailbox.countDocuments({ status: "active" });
-    const expiredMailboxes = 0;
+    const expiredMailboxes = await TemporaryMailbox.countDocuments({ status: "expired" });
     const totalEmails = await TemporaryEmail.countDocuments();
 
     const today = new Date();
@@ -57,34 +53,53 @@ export async function GET(req: NextRequest) {
     });
     const totalExecutions = await JobExecution.countDocuments();
 
-    const cloudflare = await fetchCloudflareUsage();
+    let cloudflare;
+    try {
+      cloudflare = await getCloudflareUsageData();
+    } catch (cfErr) {
+      logError("admin-stats", "Cloudflare usage fetch failed", cfErr);
+      cloudflare = {
+        connected: false,
+        available: false,
+        configured: false,
+        account: null,
+        zone: null,
+        worker: null,
+        d1: null,
+        lastUpdated: new Date().toISOString(),
+        message: "Failed to fetch Cloudflare usage",
+        resources: [],
+      };
+    }
+
+    const resources = Array.isArray(cloudflare.resources) ? cloudflare.resources : [];
 
     return NextResponse.json({
       users: {
-        total: safeNumber(totalUsers),
-        active: safeNumber(activeUsers),
-        blocked: safeNumber(blockedUsers),
+        total: safeNumber(totalUsers, 0),
+        active: safeNumber(activeUsers, 0),
+        blocked: safeNumber(blockedUsers, 0),
       },
       tempMail: {
-        mailboxes: safeNumber(totalMailboxes),
-        expiredMailboxes: safeNumber(expiredMailboxes),
-        totalEmails: safeNumber(totalEmails),
-        emailsToday: safeNumber(emailsToday),
-        mailboxesToday: safeNumber(mailboxesToday),
+        mailboxes: safeNumber(totalMailboxes, 0),
+        expiredMailboxes: safeNumber(expiredMailboxes, 0),
+        totalEmails: safeNumber(totalEmails, 0),
+        emailsToday: safeNumber(emailsToday, 0),
+        mailboxesToday: safeNumber(mailboxesToday, 0),
       },
       jobs: {
-        total: safeNumber(totalJobs),
-        active: safeNumber(activeJobs),
-        executionsToday: safeNumber(executionsToday),
-        failedToday: safeNumber(failedToday),
-        totalExecutions: safeNumber(totalExecutions),
+        total: safeNumber(totalJobs, 0),
+        active: safeNumber(activeJobs, 0),
+        executionsToday: safeNumber(executionsToday, 0),
+        failedToday: safeNumber(failedToday, 0),
+        totalExecutions: safeNumber(totalExecutions, 0),
       },
       cloudflare: {
         ...cloudflare,
-        healthy: cloudflare.resources.filter((m) => m.status === "healthy").length,
-        warning: cloudflare.resources.filter((m) => m.status === "warning").length,
-        critical: cloudflare.resources.filter((m) => m.status === "critical").length,
-        unavailable: cloudflare.resources.filter((m) => m.status === "unavailable").length,
+        healthy: resources.filter((m) => m.status === "healthy").length,
+        warning: resources.filter((m) => m.status === "warning").length,
+        critical: resources.filter((m) => m.status === "critical").length,
+        unavailable: resources.filter((m) => m.status === "unavailable").length,
       },
       lastUpdated: new Date().toISOString(),
     });
@@ -96,3 +111,4 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+

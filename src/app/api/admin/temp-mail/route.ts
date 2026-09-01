@@ -3,6 +3,16 @@ import { requireAdminAuth, getClientIp } from "@/lib/admin-auth";
 import connectDb from "@/lib/mongodb";
 import { TemporaryMailbox, TemporaryEmail, AdminAuditLog } from "@/lib/models";
 import { logError } from "@/lib/security";
+import { getCloudflareUsageData } from "@/lib/cloudflare-usage";
+
+function safeNumber(value: unknown, fallback: number = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+}
 
 export async function GET(req: NextRequest) {
   const authError = requireAdminAuth(req);
@@ -19,7 +29,9 @@ export async function GET(req: NextRequest) {
     const activeMailboxes = await TemporaryMailbox.countDocuments({
       status: "active",
     });
-    const expiredMailboxes = 0;
+    const expiredMailboxes = await TemporaryMailbox.countDocuments({
+      status: "expired",
+    });
     const deletedMailboxes = await TemporaryMailbox.countDocuments({
       status: "deleted",
     });
@@ -50,42 +62,31 @@ export async function GET(req: NextRequest) {
         ? emailStats[0]
         : { totalSize: 0, avgSize: 0 };
 
-    // Fetch Cloudflare worker usage
-    let workerUsage: Record<string, unknown> | null = null;
+    // Fetch real Cloudflare usage
+    let cloudflareUsage = null;
     try {
-      const workerUrl =
-        process.env.NEXT_PUBLIC_API_URL || "https://api.cronjobs.site";
-      const res = await fetch(`${workerUrl}/api/temp-mail/usage`, {
-        headers: {
-          "x-temp-mail-service":
-            process.env.TEMP_MAIL_SERVICE_SECRET || "",
-        },
-      });
-
-      if (res.ok) {
-        workerUsage = await res.json();
-      }
+      cloudflareUsage = await getCloudflareUsageData();
     } catch {
-      // Silently fail
+      // Graceful fallback
     }
 
     return NextResponse.json({
       mailboxes: {
-        total: totalMailboxes,
-        active: activeMailboxes,
-        expired: expiredMailboxes,
-        deleted: deletedMailboxes,
-        createdToday: mailboxesToday,
+        total: safeNumber(totalMailboxes, 0),
+        active: safeNumber(activeMailboxes, 0),
+        expired: safeNumber(expiredMailboxes, 0),
+        deleted: safeNumber(deletedMailboxes, 0),
+        createdToday: safeNumber(mailboxesToday, 0),
       },
       emails: {
-        total: totalEmails,
-        createdToday: emailsToday,
+        total: safeNumber(totalEmails, 0),
+        createdToday: safeNumber(emailsToday, 0),
       },
       storage: {
-        totalBytes: storage.totalSize,
-        averageEmailSize: storage.avgSize,
+        totalBytes: safeNumber(storage?.totalSize, 0),
+        averageEmailSize: safeNumber(storage?.avgSize, 0),
       },
-      cloudflareUsage: workerUsage,
+      cloudflare: cloudflareUsage,
     });
   } catch (error) {
     logError("admin-temp-mail", "Failed to fetch temp mail stats", error);
@@ -114,14 +115,12 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "clean-expired") {
-      // Mark expired mailboxes as expired
       const now = new Date();
       const result = await TemporaryMailbox.updateMany(
         { status: "active", expiresAt: { $lt: now } },
         { $set: { status: "expired", deletedAt: new Date() } }
       );
 
-      // Log action
       await AdminAuditLog.create({
         action: "mailbox_cleaned",
         adminIp: getClientIp(req),
@@ -133,7 +132,7 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        message: `Cleaned ${result.modifiedCount} expired mailboxes`,
+        message: `Marked ${result.modifiedCount} expired mailboxes.`,
       });
     }
 
@@ -149,3 +148,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
