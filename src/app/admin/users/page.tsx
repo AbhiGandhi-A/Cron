@@ -56,7 +56,27 @@ export default function UsersPage() {
     type: "success" | "error" | "info";
   } | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [userDetails, setUserDetails] = useState<{
+    jobs?: { total: number; totalExecutions: number };
+    tempMail?: { enabled: boolean; mailboxes: number; emails: number };
+  } | null>(null);
+  const [editForm, setEditForm] = useState<{
+    name: string;
+    plan: string;
+    maxJobs: number;
+    maxExecutions: number;
+    status: "active" | "blocked";
+    tempMailDisabled: boolean;
+  }>({
+    name: "",
+    plan: "free",
+    maxJobs: 10,
+    maxExecutions: 1000,
+    status: "active",
+    tempMailDisabled: false,
+  });
   const [actionLoading, setActionLoading] = useState(false);
+  const [modalLoading, setModalLoading] = useState(false);
 
   useEffect(() => {
     fetchUsers();
@@ -97,6 +117,94 @@ export default function UsersPage() {
     }
   };
 
+  const openManageModal = async (user: User) => {
+    setSelectedUser(user);
+    setEditForm({
+      name: user.name || "",
+      plan: user.plan || "free",
+      maxJobs: user.maxJobs || 10,
+      maxExecutions: user.maxExecutions || 1000,
+      status: user.status || "active",
+      tempMailDisabled: Boolean(user.tempMailDisabled),
+    });
+    setUserDetails(null);
+    setModalLoading(true);
+
+    try {
+      const token = localStorage.getItem("adminAuthToken");
+      if (!token) return;
+
+      const res = await fetch(`/api/admin/users/${user._id}`, {
+        headers: { Authorization: token },
+        cache: "no-store",
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setUserDetails({
+          jobs: data.jobs,
+          tempMail: data.tempMail,
+        });
+        if (data.user) {
+          setEditForm({
+            name: data.user.name || "",
+            plan: data.user.plan || "free",
+            maxJobs: data.user.maxJobs || 10,
+            maxExecutions: data.user.maxExecutions || 1000,
+            status: data.user.status || "active",
+            tempMailDisabled: Boolean(data.user.tempMailDisabled),
+          });
+        }
+      }
+    } catch {
+      // Graceful fallback to table data
+    } finally {
+      setModalLoading(false);
+    }
+  };
+
+  const handleSaveUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedUser) return;
+
+    try {
+      setActionLoading(true);
+      const token = localStorage.getItem("adminAuthToken");
+      if (!token) return;
+
+      const res = await fetch(`/api/admin/users/${selectedUser._id}`, {
+        method: "PUT",
+        headers: {
+          Authorization: token,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(editForm),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Failed to update user");
+      }
+
+      const data = await res.json();
+      setToast({
+        message: data.message || "User updated successfully",
+        type: "success",
+      });
+
+      // Update in place
+      setSelectedUser(data.user);
+      fetchUsers();
+    } catch (err) {
+      setToast({
+        message: err instanceof Error ? err.message : "Update failed",
+        type: "error",
+      });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleUserAction = async (userId: string, action: string) => {
     try {
       setActionLoading(true);
@@ -113,12 +221,25 @@ export default function UsersPage() {
       });
 
       if (!res.ok) throw new Error("Action failed");
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Action failed");
+      }
 
       const data = await res.json();
       setToast({
         message: data.message || "Action completed successfully",
         type: "success",
       });
+
+      if (data.user && selectedUser) {
+        setSelectedUser(data.user);
+        setEditForm((prev) => ({
+          ...prev,
+          status: data.user.status,
+          tempMailDisabled: data.user.tempMailDisabled,
+        }));
+      }
 
       fetchUsers();
       setSelectedUser(null);
@@ -134,6 +255,7 @@ export default function UsersPage() {
 
   const handleDeleteUser = async (userId: string, email: string) => {
     if (!confirm(`Are you sure you want to permanently delete ${email}? All user jobs and data will be removed.`)) {
+    if (!confirm(`Are you sure you want to permanently delete ${email}? All user jobs, mailboxes, and data will be removed.`)) {
       return;
     }
 
@@ -148,6 +270,10 @@ export default function UsersPage() {
       });
 
       if (!res.ok) throw new Error("Delete failed");
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Delete failed");
+      }
 
       setToast({
         message: `User ${email} deleted successfully`,
@@ -181,6 +307,7 @@ export default function UsersPage() {
           </h1>
           <p className="text-sm text-slate-500 mt-0.5">
             Search, inspect, block, or manage permissions for registered user accounts
+            Search, inspect, manage plans, block accounts, and configure permissions
           </p>
         </div>
       </div>
@@ -314,6 +441,8 @@ export default function UsersPage() {
                         <button
                           onClick={() => setSelectedUser(user)}
                           className="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition"
+                          onClick={() => openManageModal(user)}
+                          className="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition cursor-pointer"
                         >
                           Manage
                         </button>
@@ -363,17 +492,23 @@ export default function UsersPage() {
       </div>
 
       {/* User Management Modal */}
+      {/* User Management & Quota Configuration Modal */}
       {selectedUser && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full p-6 space-y-5">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-5 my-8 max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
             <div className="flex justify-between items-start border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-base font-bold text-slate-900">Manage User Account</h3>
+                <h3 className="text-lg font-bold text-slate-900">Manage User Account</h3>
                 <p className="text-xs text-slate-500 font-mono mt-0.5">{selectedUser.email}</p>
               </div>
               <button
                 onClick={() => setSelectedUser(null)}
                 className="text-slate-400 hover:text-slate-600 text-lg font-bold"
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-base font-bold transition"
               >
                 ✕
               </button>
@@ -383,68 +518,179 @@ export default function UsersPage() {
               <div className="flex justify-between">
                 <span className="text-slate-500">Name:</span>
                 <span className="font-semibold">{selectedUser.name || "N/A"}</span>
+            {/* Live Stats Overview */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+                <span className="text-[10px] font-bold text-slate-500 uppercase block">Cron Jobs</span>
+                <span className="text-lg font-extrabold text-slate-900 block mt-0.5">
+                  {modalLoading ? "..." : userDetails?.jobs?.total ?? "0"}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Status:</span>
                 <span className={`font-bold ${selectedUser.status === "active" ? "text-emerald-700" : "text-red-700"}`}>
                   {selectedUser.status.toUpperCase()}
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+                <span className="text-[10px] font-bold text-slate-500 uppercase block">Executions</span>
+                <span className="text-lg font-extrabold text-slate-900 block mt-0.5">
+                  {modalLoading ? "..." : userDetails?.jobs?.totalExecutions ?? "0"}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Temp Mail Access:</span>
                 <span className="font-semibold">
                   {selectedUser.tempMailDisabled ? "Disabled" : "Active"}
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+                <span className="text-[10px] font-bold text-slate-500 uppercase block">Mailboxes</span>
+                <span className="text-lg font-extrabold text-slate-900 block mt-0.5">
+                  {modalLoading ? "..." : userDetails?.tempMail?.mailboxes ?? "0"}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Registered:</span>
                 <span>{new Date(selectedUser.createdAt).toLocaleString()}</span>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+                <span className="text-[10px] font-bold text-slate-500 uppercase block">Messages</span>
+                <span className="text-lg font-extrabold text-slate-900 block mt-0.5">
+                  {modalLoading ? "..." : userDetails?.tempMail?.emails ?? "0"}
+                </span>
               </div>
             </div>
 
             <div className="space-y-2.5">
               {selectedUser.status === "active" ? (
+            {/* Quick Status Toggles */}
+            <div className="flex flex-col sm:flex-row gap-2 pt-1">
+              {editForm.status === "active" ? (
                 <button
+                  type="button"
                   onClick={() => handleUserAction(selectedUser._id, "block")}
                   disabled={actionLoading}
                   className="w-full py-2.5 px-4 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 transition font-semibold text-xs disabled:opacity-50"
+                  className="flex-1 py-2 px-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 transition font-semibold text-xs disabled:opacity-50 text-center"
                 >
                   {actionLoading ? "Processing..." : "Block User (Prevent Sign In)"}
+                  🚫 {actionLoading ? "Processing..." : "Block Account"}
                 </button>
               ) : (
                 <button
+                  type="button"
                   onClick={() => handleUserAction(selectedUser._id, "unblock")}
                   disabled={actionLoading}
                   className="w-full py-2.5 px-4 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 transition font-semibold text-xs disabled:opacity-50"
+                  className="flex-1 py-2 px-3 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 transition font-semibold text-xs disabled:opacity-50 text-center"
                 >
                   {actionLoading ? "Processing..." : "Unblock User"}
+                  ✅ {actionLoading ? "Processing..." : "Unblock Account"}
                 </button>
               )}
 
               {selectedUser.tempMailDisabled ? (
+              {editForm.tempMailDisabled ? (
                 <button
+                  type="button"
                   onClick={() => handleUserAction(selectedUser._id, "enable-temp-mail")}
                   disabled={actionLoading}
                   className="w-full py-2.5 px-4 rounded-xl border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100 transition font-semibold text-xs disabled:opacity-50"
+                  className="flex-1 py-2 px-3 rounded-xl border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100 transition font-semibold text-xs disabled:opacity-50 text-center"
                 >
                   {actionLoading ? "Processing..." : "Enable Temporary Mail Service"}
+                  📬 {actionLoading ? "Processing..." : "Enable Temp Mail"}
                 </button>
               ) : (
                 <button
+                  type="button"
                   onClick={() => handleUserAction(selectedUser._id, "disable-temp-mail")}
                   disabled={actionLoading}
                   className="w-full py-2.5 px-4 rounded-xl border border-slate-200 bg-slate-100 text-slate-800 hover:bg-slate-200 transition font-semibold text-xs disabled:opacity-50"
+                  className="flex-1 py-2 px-3 rounded-xl border border-slate-200 bg-slate-100 text-slate-800 hover:bg-slate-200 transition font-semibold text-xs disabled:opacity-50 text-center"
                 >
                   {actionLoading ? "Processing..." : "Disable Temporary Mail Service"}
+                  📭 {actionLoading ? "Processing..." : "Disable Temp Mail"}
                 </button>
               )}
+            </div>
 
+            {/* Edit User Quotas & Settings Form */}
+            <form onSubmit={handleSaveUser} className="space-y-4 pt-2 border-t border-slate-100">
+              <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">Plan & Quotas Configuration</h4>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Display Name</label>
+                  <input
+                    type="text"
+                    value={editForm.name}
+                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="User Name"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Account Plan</label>
+                  <select
+                    value={editForm.plan}
+                    onChange={(e) => setEditForm({ ...editForm, plan: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase"
+                  >
+                    <option value="free">Free</option>
+                    <option value="pro">Pro</option>
+                    <option value="enterprise">Enterprise</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Max Cron Jobs</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="10000"
+                    value={editForm.maxJobs}
+                    onChange={(e) => setEditForm({ ...editForm, maxJobs: parseInt(e.target.value, 10) || 10 })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Max Monthly Executions</label>
+                  <input
+                    type="number"
+                    min="10"
+                    max="10000000"
+                    value={editForm.maxExecutions}
+                    onChange={(e) => setEditForm({ ...editForm, maxExecutions: parseInt(e.target.value, 10) || 1000 })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={actionLoading}
+                  className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition shadow-xs disabled:opacity-50 cursor-pointer"
+                >
+                  {actionLoading ? "Saving Changes..." : "Save User Settings & Quotas"}
+                </button>
+              </div>
+            </form>
+
+            {/* Danger Zone */}
+            <div className="pt-3 border-t border-slate-100">
               <button
+                type="button"
                 onClick={() => handleDeleteUser(selectedUser._id, selectedUser.email)}
                 disabled={actionLoading}
                 className="w-full py-2.5 px-4 rounded-xl border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition font-semibold text-xs disabled:opacity-50"
+                className="w-full py-2.5 px-4 rounded-xl border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition font-semibold text-xs disabled:opacity-50 cursor-pointer"
               >
                 {actionLoading ? "Processing..." : "Delete User Account Permanently"}
+                🗑️ Permanently Delete User & All Data
               </button>
             </div>
           </div>

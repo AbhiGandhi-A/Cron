@@ -726,7 +726,6 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
         label: "Zone Requests (24h)",
         category: "zone",
         usage: zoneRequests,
-        limit: null, // Unmetered on Cloudflare CDN; quota is Unavailable
         limit: zoneRequestsLimit,
         resetPeriod: "Last 24 Hours",
         unit: "requests",
@@ -743,7 +742,6 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
           label: "Bandwidth Transferred (24h)",
           category: "zone",
           usage: zoneBandwidth,
-          limit: null,
           limit: zoneBandwidthLimit,
           resetPeriod: "Last 24 Hours",
           unit: "bytes",
@@ -762,7 +760,6 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
           label: "Cached Requests (24h)",
           category: "zone",
           usage: zoneCachedRequests,
-          limit: null,
           limit: cacheTarget,
           resetPeriod: "Last 24 Hours",
           unit: "requests",
