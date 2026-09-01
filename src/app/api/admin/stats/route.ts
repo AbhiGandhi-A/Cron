@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminAuth } from "@/lib/admin-auth";
 import connectDb from "@/lib/mongodb";
-import { User, CronJob, TemporaryMailbox, TemporaryEmail, JobExecution } from "@/lib/models";
 import { User, CronJob, JobExecution } from "@/lib/models";
 import { logError } from "@/lib/security";
 import { getCloudflareUsageData } from "@/lib/cloudflare-usage";
@@ -26,57 +25,11 @@ export async function GET(req: NextRequest) {
   try {
     await connectDb();
 
-    const totalUsers = await User.countDocuments();
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const activeUsers = await User.countDocuments({
-      lastLoginAt: { $gte: sevenDaysAgo },
-    });
-    const blockedUsers = await User.countDocuments({ status: "blocked" });
-
-    const totalMailboxes = await TemporaryMailbox.countDocuments({ status: "active" });
-    const expiredMailboxes = await TemporaryMailbox.countDocuments({ status: "expired" });
-    const totalEmails = await TemporaryEmail.countDocuments();
-
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const emailsToday = await TemporaryEmail.countDocuments({
-      createdAt: { $gte: today },
-    });
-    const mailboxesToday = await TemporaryMailbox.countDocuments({
-      createdAt: { $gte: today },
-      status: { $ne: "deleted" },
-    });
 
-    const totalJobs = await CronJob.countDocuments();
-    const activeJobs = await CronJob.countDocuments({ isActive: true });
-    const executionsToday = await JobExecution.countDocuments({
-      startedAt: { $gte: today },
-    });
-    const failedToday = await JobExecution.countDocuments({
-      startedAt: { $gte: today },
-      status: "FAILED",
-    });
-    const totalExecutions = await JobExecution.countDocuments();
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    let cloudflare;
-    try {
-      cloudflare = await getCloudflareUsageData();
-    } catch (cfErr) {
-      logError("admin-stats", "Cloudflare usage fetch failed", cfErr);
-      cloudflare = {
-        connected: false,
-        available: false,
-        configured: false,
-        account: null,
-        zone: null,
-        worker: null,
-        d1: null,
-        lastUpdated: new Date().toISOString(),
-        message: "Failed to fetch Cloudflare usage",
-        resources: [],
-      };
-    }
     const [
       totalUsers,
       activeUsers,
@@ -126,11 +79,6 @@ export async function GET(req: NextRequest) {
         blocked: safeNumber(blockedUsers, 0),
       },
       tempMail: {
-        mailboxes: safeNumber(totalMailboxes, 0),
-        expiredMailboxes: safeNumber(expiredMailboxes, 0),
-        totalEmails: safeNumber(totalEmails, 0),
-        emailsToday: safeNumber(emailsToday, 0),
-        mailboxesToday: safeNumber(mailboxesToday, 0),
         mailboxes: safeNumber(tempMailStats.mailboxes.active, 0),
         totalMailboxes: safeNumber(tempMailStats.mailboxes.total, 0),
         expiredMailboxes: safeNumber(tempMailStats.mailboxes.expired, 0),

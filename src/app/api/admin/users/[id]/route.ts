@@ -35,15 +35,6 @@ export async function GET(
       );
     }
 
-    // Get temp mail stats
-    const mailboxes = await TemporaryMailbox.find({
-      ownerId: user._id.toString(),
-      status: "active",
-    }).lean();
-    const mailboxIds = mailboxes.map((m) => m._id);
-    const emailCount = await TemporaryEmail.countDocuments({
-      mailboxId: { $in: mailboxIds },
-    });
     // Get real-time temp mail stats (Cloudflare D1 + Mongo)
     const tempMail = await getUserTempMailStats(user._id.toString());
 
@@ -65,8 +56,6 @@ export async function GET(
       user,
       tempMail: {
         enabled: !user.tempMailDisabled,
-        mailboxes: mailboxes.length,
-        emails: emailCount,
         mailboxes: tempMail.mailboxes,
         emails: tempMail.emails,
       },

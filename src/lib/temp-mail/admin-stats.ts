@@ -405,7 +405,6 @@ export async function cleanExpiredMailboxes(): Promise<{
       WHERE status = 'active' AND expires_at < datetime('now');
     `;
     const results = await queryD1(d1Sql);
-    // D1 update executed successfully
     if (results) {
       d1Modified = 1;
     }
