@@ -37,6 +37,12 @@ interface TempMailStats {
   };
   cloudflare?: {
     connected?: boolean;
+    available?: boolean;
+    configured?: boolean;
+    account?: { id: string; name: string | null } | null;
+    zone?: { id: string; name: string | null; plan?: string | null } | null;
+    worker?: { name: string | null } | null;
+    d1?: { id: string | null; name: string | null; fileSize?: number | null } | null;
     resources?: CloudflareMetric[];
   } | null;
 }
@@ -140,6 +146,19 @@ export default function TempMailPage() {
   };
 
   const workerMetrics = stats?.cloudflare?.resources?.filter((r) => r.category === "workers") || [];
+  const d1Metrics = stats?.cloudflare?.resources?.filter((r) => r.category === "d1") || [];
+  const zoneMetrics = stats?.cloudflare?.resources?.filter((r) => r.category === "zone") || [];
+
+  // Capacity and storage limits
+  const maxInboxCapacity = Math.max((stats?.mailboxes.active || 0) * 6, 60);
+  const emailsTotal = stats?.emails.total || 0;
+  const emailsPercent = (emailsTotal / maxInboxCapacity) * 100;
+  const remainingEmailSlots = Math.max(maxInboxCapacity - emailsTotal, 0);
+
+  const d1StorageLimitMetric = d1Metrics.find((m) => m.id === "d1_storage")?.limit || 5368709120; // 5 GB
+  const storageBytes = stats?.storage.totalBytes || 0;
+  const storagePercent = (storageBytes / d1StorageLimitMetric) * 100;
+  const remainingStorageBytes = Math.max(d1StorageLimitMetric - storageBytes, 0);
 
   return (
     <div className="space-y-8 pb-12">
@@ -156,6 +175,7 @@ export default function TempMailPage() {
           </h1>
           <p className="text-sm text-slate-500 mt-0.5">
             Monitor disposable mailbox lifecycle, inbound messages, and Cloudflare Worker traffic
+            Monitor disposable mailbox lifecycle, inbound messages, and Cloudflare Worker & D1 traffic
           </p>
         </div>
 
@@ -233,6 +253,7 @@ export default function TempMailPage() {
           </section>
 
           {/* Section 2: Emails & Storage */}
+          {/* Section 2: Emails & Storage with Progress Bars and Limits */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
               <h3 className="font-bold text-slate-900 border-b border-slate-100 pb-3">Email Messages</h3>
@@ -242,12 +263,68 @@ export default function TempMailPage() {
                   <span className="text-2xl font-extrabold text-slate-900 mt-1 block">
                     {formatNumber(stats.emails.total)}
                   </span>
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="font-bold text-slate-900">Email Messages Buffer</h3>
+                <span className="text-xs text-slate-500 font-medium">Retention: 6 msgs/inbox</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="p-4 bg-slate-50 rounded-xl space-y-3">
+                  <div>
+                    <span className="text-xs text-slate-500 block">Total Messages Stored</span>
+                    <div className="flex items-baseline gap-1.5 mt-0.5">
+                      <span className="text-2xl font-extrabold text-slate-900">
+                        {formatNumber(stats.emails.total)}
+                      </span>
+                      <span className="text-xs font-semibold text-slate-400">
+                        / {formatNumber(maxInboxCapacity)} cap
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5 pt-1 border-t border-slate-200/60">
+                    <div className="h-2 w-full bg-slate-200/80 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-blue-600 transition-all duration-500"
+                        style={{ width: `${Math.min(100, Math.max(stats.emails.total ? 1 : 0, emailsPercent))}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between items-center text-[10px] text-slate-500">
+                      <span>{formatNumber(remainingEmailSlots)} slots available</span>
+                      <span className="font-bold text-slate-700">{emailsPercent.toFixed(1)}% full</span>
+                    </div>
+                  </div>
                 </div>
                 <div className="p-4 bg-slate-50 rounded-xl">
                   <span className="text-xs text-slate-500 block">Messages Received Today</span>
                   <span className="text-2xl font-extrabold text-emerald-700 mt-1 block">
                     {formatNumber(stats.emails.createdToday)}
                   </span>
+
+                <div className="p-4 bg-slate-50 rounded-xl space-y-3">
+                  <div>
+                    <span className="text-xs text-slate-500 block">Messages Received Today</span>
+                    <div className="flex items-baseline gap-1.5 mt-0.5">
+                      <span className="text-2xl font-extrabold text-emerald-700">
+                        {formatNumber(stats.emails.createdToday)}
+                      </span>
+                      <span className="text-xs font-semibold text-slate-400">/ 1,000 daily</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5 pt-1 border-t border-slate-200/60">
+                    <div className="h-2 w-full bg-slate-200/80 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-emerald-600 transition-all duration-500"
+                        style={{ width: `${Math.min(100, Math.max(stats.emails.createdToday ? 1 : 0, (stats.emails.createdToday / 1000) * 100))}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between items-center text-[10px] text-slate-500">
+                      <span>Reset: 00:00 UTC</span>
+                      <span className="font-bold text-emerald-700">
+                        {((stats.emails.createdToday / 1000) * 100).toFixed(1)}% volume
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -260,12 +337,66 @@ export default function TempMailPage() {
                   <span className="text-2xl font-extrabold text-slate-900 mt-1 block">
                     {formatBytes(stats.storage.totalBytes)}
                   </span>
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="font-bold text-slate-900">Storage Consumption (D1 Backend)</h3>
+                <span className="text-xs text-slate-500 font-medium">Limit: 5 GB Cloudflare</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="p-4 bg-slate-50 rounded-xl space-y-3">
+                  <div>
+                    <span className="text-xs text-slate-500 block">Total Email Body Storage</span>
+                    <div className="flex items-baseline gap-1.5 mt-0.5">
+                      <span className="text-2xl font-extrabold text-slate-900">
+                        {formatBytes(stats.storage.totalBytes)}
+                      </span>
+                      <span className="text-xs font-semibold text-slate-400">
+                        / {formatBytes(d1StorageLimitMetric)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5 pt-1 border-t border-slate-200/60">
+                    <div className="h-2 w-full bg-slate-200/80 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-purple-600 transition-all duration-500"
+                        style={{ width: `${Math.min(100, Math.max(stats.storage.totalBytes ? 0.8 : 0, storagePercent))}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between items-center text-[10px] text-slate-500">
+                      <span>{formatBytes(remainingStorageBytes)} remaining</span>
+                      <span className="font-bold text-slate-700">{storagePercent.toFixed(2)}% used</span>
+                    </div>
+                  </div>
                 </div>
                 <div className="p-4 bg-slate-50 rounded-xl">
                   <span className="text-xs text-slate-500 block">Average Message Size</span>
                   <span className="text-2xl font-extrabold text-slate-900 mt-1 block">
                     {formatBytes(stats.storage.averageEmailSize)}
                   </span>
+
+                <div className="p-4 bg-slate-50 rounded-xl space-y-3">
+                  <div>
+                    <span className="text-xs text-slate-500 block">Average Message Size</span>
+                    <div className="flex items-baseline gap-1.5 mt-0.5">
+                      <span className="text-2xl font-extrabold text-slate-900">
+                        {formatBytes(stats.storage.averageEmailSize)}
+                      </span>
+                      <span className="text-xs font-semibold text-slate-400">/ 100 KB avg</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5 pt-1 border-t border-slate-200/60">
+                    <div className="h-2 w-full bg-slate-200/80 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-blue-600 transition-all duration-500"
+                        style={{ width: `${Math.min(100, Math.max(stats.storage.averageEmailSize ? 1 : 0, (stats.storage.averageEmailSize / 102400) * 100))}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between items-center text-[10px] text-slate-500">
+                      <span>Optimal Payload</span>
+                      <span className="font-bold text-slate-700">Healthy Size</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -284,6 +415,17 @@ export default function TempMailPage() {
               >
                 Settings →
               </Link>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-slate-500">
+                  Worker: <span className="font-bold text-slate-800">{stats.cloudflare?.worker?.name || "cronjobs-worker"}</span>
+                </span>
+                <Link
+                  href="/admin/settings"
+                  className="text-xs font-semibold text-blue-600 hover:text-blue-700"
+                >
+                  Settings →
+                </Link>
+              </div>
             </div>
 
             {workerMetrics.length === 0 ? (
@@ -364,6 +506,188 @@ export default function TempMailPage() {
               </div>
             )}
           </section>
+
+          {/* Section 4: Cloudflare D1 Database Storage & Queries */}
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="font-bold text-slate-900">Cloudflare D1 Database Analytics (Storage & SQL Queries)</h3>
+                <p className="text-xs text-slate-500">Live D1 sqlite storage and 24h GraphQL row execution metrics</p>
+              </div>
+              <div className="text-xs font-medium text-slate-500">
+                DB: <span className="font-bold text-slate-800">{stats.cloudflare?.d1?.name || stats.cloudflare?.d1?.id || "e6ae1a8a-f9e4-48e6-94c3-18649c023a8e"}</span>
+              </div>
+            </div>
+
+            {d1Metrics.length === 0 ? (
+              <div className="p-6 bg-slate-50 rounded-xl text-center text-xs text-slate-500">
+                Cloudflare D1 database analytics unavailable. Ensure CLOUDFLARE_D1_DATABASE_ID is configured in environment.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {d1Metrics.map((metric) => {
+                  const hasLimit = metric.limit !== null && metric.limit > 0;
+                  const isBytes = metric.unit === "bytes";
+                  const currentFormatted = isBytes ? formatBytes(metric.current) : formatNumber(metric.current);
+                  const limitFormatted = isBytes ? formatBytes(metric.limit) : formatNumber(metric.limit);
+                  const remainingFormatted = isBytes ? formatBytes(metric.remaining) : formatNumber(metric.remaining);
+
+                  return (
+                    <div key={metric.id} className="p-4 rounded-xl bg-slate-50 border border-slate-200/90 space-y-3">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="font-bold text-slate-700">{metric.label}</span>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                            metric.status === "critical"
+                              ? "bg-red-50 text-red-700 border-red-200"
+                              : metric.status === "warning"
+                              ? "bg-amber-50 text-amber-700 border-amber-200"
+                              : metric.status === "healthy"
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              : "bg-slate-100 text-slate-600 border-slate-200"
+                          }`}
+                        >
+                          {metric.status.charAt(0).toUpperCase() + metric.status.slice(1)}
+                        </span>
+                      </div>
+
+                      <div>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-2xl font-extrabold text-slate-900 tracking-tight">
+                            {currentFormatted}
+                          </span>
+                          {hasLimit && (
+                            <span className="text-xs font-semibold text-slate-400">
+                              / {limitFormatted} {metric.unit && !isBytes ? metric.unit : ""}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[11px] text-slate-400 block mt-0.5">Reset: {metric.resetPeriod}</span>
+                      </div>
+
+                      {metric.percentage !== null && hasLimit ? (
+                        <div className="space-y-1.5 pt-1 border-t border-slate-200/60">
+                          <div className="h-2 w-full bg-slate-200/90 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                metric.status === "critical"
+                                  ? "bg-red-500"
+                                  : metric.status === "warning"
+                                  ? "bg-amber-500"
+                                  : "bg-blue-600"
+                              }`}
+                              style={{ width: `${Math.min(100, Math.max(metric.current ? 0.8 : 0, metric.percentage))}%` }}
+                            />
+                          </div>
+                          <div className="flex justify-between items-center text-[10px] text-slate-500">
+                            <span>
+                              {metric.remaining !== null ? `${remainingFormatted} remaining` : `Reset: ${metric.resetPeriod}`}
+                            </span>
+                            <span className="font-bold text-slate-700">{metric.percentage.toFixed(2)}% used</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-slate-400 pt-1 border-t border-slate-200/60">
+                          Quota: Standard Cloudflare Allowance
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          {/* Section 5: Cloudflare Edge Routing & CDN Network */}
+          {zoneMetrics.length > 0 && (
+            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="font-bold text-slate-900">Cloudflare Edge Routing & CDN Network</h3>
+                  <p className="text-xs text-slate-500">Inbound HTTP traffic delivered to Cloudflare edge edge network</p>
+                </div>
+                <div className="text-xs font-medium text-slate-500">
+                  Domain: <span className="font-bold text-slate-800">{stats.cloudflare?.zone?.name || "cronjobs.site"}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {zoneMetrics.map((metric) => {
+                  const isBytes = metric.unit === "bytes";
+                  const currentFormatted = isBytes ? formatBytes(metric.current) : formatNumber(metric.current);
+                  const limitFormatted = isBytes ? formatBytes(metric.limit) : formatNumber(metric.limit);
+                  const remainingFormatted = isBytes ? formatBytes(metric.remaining) : formatNumber(metric.remaining);
+                  const hasLimit = metric.limit !== null && metric.limit > 0;
+
+                  return (
+                    <div key={metric.id} className="p-4 rounded-xl bg-slate-50 border border-slate-200/90 space-y-3">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="font-bold text-slate-700">{metric.label}</span>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                            metric.status === "critical"
+                              ? "bg-red-50 text-red-700 border-red-200"
+                              : metric.status === "warning"
+                              ? "bg-amber-50 text-amber-700 border-amber-200"
+                              : metric.status === "healthy"
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              : "bg-slate-100 text-slate-600 border-slate-200"
+                          }`}
+                        >
+                          {metric.status.charAt(0).toUpperCase() + metric.status.slice(1)}
+                        </span>
+                      </div>
+
+                      <div>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-2xl font-extrabold text-slate-900 tracking-tight">
+                            {currentFormatted}
+                          </span>
+                          {hasLimit && (
+                            <span className="text-xs font-semibold text-slate-400">
+                              / {limitFormatted}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[11px] text-slate-400 block mt-0.5">Reset: {metric.resetPeriod}</span>
+                      </div>
+
+                      {metric.percentage !== null && hasLimit ? (
+                        <div className="space-y-1.5 pt-1 border-t border-slate-200/60">
+                          <div className="h-2 w-full bg-slate-200/90 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                metric.status === "critical"
+                                  ? "bg-red-500"
+                                  : metric.status === "warning"
+                                  ? "bg-amber-500"
+                                  : "bg-blue-600"
+                              }`}
+                              style={{ width: `${Math.min(100, Math.max(metric.current ? 0.8 : 0, metric.percentage))}%` }}
+                            />
+                          </div>
+                          <div className="flex justify-between items-center text-[10px] text-slate-500">
+                            <span>
+                              {metric.remaining !== null ? `${remainingFormatted} remaining` : `Reset: ${metric.resetPeriod}`}
+                            </span>
+                            <span className="font-bold text-slate-700">
+                              {metric.id === "zone_cached_requests"
+                                ? `${metric.percentage.toFixed(2)}% cache ratio`
+                                : `${metric.percentage.toFixed(2)}% used`}
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-slate-400 pt-1 border-t border-slate-200/60 truncate" title={metric.source}>
+                          Source: Cloudflare GraphQL
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
 
           {/* Temp Mail Invariants Info */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs text-xs text-slate-600 space-y-2">

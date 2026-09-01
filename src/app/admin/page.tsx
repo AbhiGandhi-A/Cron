@@ -622,6 +622,10 @@ export default function AdminDashboard() {
             {zoneMetrics.map((metric) => {
               const isBytes = metric.unit === "bytes";
               const formattedVal = isBytes ? formatBytes(metric.current) : formatNumber(metric.current);
+              const formattedLimit = isBytes ? formatBytes(metric.limit) : formatNumber(metric.limit);
+              const formattedRemaining = isBytes ? formatBytes(metric.remaining) : formatNumber(metric.remaining);
+              const hasLimit = metric.limit !== null && metric.limit > 0;
+              const hasPercentage = metric.percentage !== null;
 
               return (
                 <div
@@ -637,6 +641,18 @@ export default function AdminDashboard() {
                     </div>
                     <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                       Healthy
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                        metric.status === "critical"
+                          ? "bg-red-50 text-red-700 border-red-200"
+                          : metric.status === "warning"
+                          ? "bg-amber-50 text-amber-700 border-amber-200"
+                          : metric.status === "healthy"
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : "bg-slate-100 text-slate-600 border-slate-200"
+                      }`}
+                    >
+                      {metric.status.charAt(0).toUpperCase() + metric.status.slice(1)}
                     </span>
                   </div>
 
@@ -651,12 +667,48 @@ export default function AdminDashboard() {
                     <div>
                       <span className="text-slate-400 block">Plan Limit</span>
                       <span className="font-semibold text-slate-700">Unmetered (CDN)</span>
+                      <span className="font-semibold text-slate-700">
+                        {hasLimit ? formattedLimit : "Unmetered (CDN)"}
+                      </span>
                     </div>
                     <div>
                       <span className="text-slate-400 block">Status</span>
                       <span className="font-semibold text-emerald-700">Active</span>
+                      <span className="text-slate-400 block">Remaining</span>
+                      <span className="font-semibold text-slate-700">
+                        {metric.remaining !== null ? formattedRemaining : "Active"}
+                      </span>
                     </div>
                   </div>
+
+                  {hasPercentage && hasLimit && (
+                    <div className="pt-2 border-t border-slate-100 space-y-1.5">
+                      <div className="flex justify-between text-xs font-medium">
+                        <span className="text-slate-500">
+                          {metric.id === "zone_cached_requests" ? "Cache Hit Ratio" : "Percentage Used"}
+                        </span>
+                        <span className="text-slate-900 font-bold">{formatPercent(metric.percentage)}</span>
+                      </div>
+                      <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${
+                            metric.status === "critical"
+                              ? "bg-red-500"
+                              : metric.status === "warning"
+                              ? "bg-amber-500"
+                              : "bg-blue-600"
+                          }`}
+                          style={{ width: `${Math.min(100, metric.percentage || 0)}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {metric.source && (
+                    <div className="text-[10px] text-slate-400 pt-1 truncate" title={metric.source}>
+                      Source: {metric.source}
+                    </div>
+                  )}
                 </div>
               );
             })}

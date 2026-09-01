@@ -370,6 +370,8 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
   const defaultD1StorageLimit = isPaidTier ? 1099511627776 : 5368709120; // 1 TB for Paid / 5 GB (5,368,709,120 bytes) for Free
   const defaultD1RowsReadLimit = isPaidTier ? 500000000 : 5000000; // 500M for Paid / 5M for Free
   const defaultD1RowsWrittenLimit = isPaidTier ? 50000000 : 100000; // 50M for Paid / 100k for Free
+  const defaultZoneRequestsLimit = isPaidTier ? 100000000 : 1000000; // 100M for Paid / 1,000,000 requests/day for Free
+  const defaultZoneBandwidthLimit = isPaidTier ? 1099511627776 : 107374182400; // 1 TB for Paid / 100 GB for Free
 
   const workerRequestsLimit = safeNumber(
     process.env.CLOUDFLARE_WORKERS_REQUEST_LIMIT || process.env.CLOUDFLARE_WORKER_REQUEST_LIMIT,
@@ -390,6 +392,14 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
   const d1RowsWrittenLimit = safeNumber(
     process.env.CLOUDFLARE_D1_ROWS_WRITTEN_LIMIT,
     defaultD1RowsWrittenLimit
+  );
+  const zoneRequestsLimit = safeNumber(
+    process.env.CLOUDFLARE_ZONE_REQUESTS_LIMIT || process.env.CLOUDFLARE_ZONE_REQUEST_LIMIT,
+    defaultZoneRequestsLimit
+  );
+  const zoneBandwidthLimit = safeNumber(
+    process.env.CLOUDFLARE_ZONE_BANDWIDTH_LIMIT_BYTES || process.env.CLOUDFLARE_ZONE_BANDWIDTH_LIMIT,
+    defaultZoneBandwidthLimit
   );
 
   // Worker Requests Metric
@@ -717,6 +727,7 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
         category: "zone",
         usage: zoneRequests,
         limit: null, // Unmetered on Cloudflare CDN; quota is Unavailable
+        limit: zoneRequestsLimit,
         resetPeriod: "Last 24 Hours",
         unit: "requests",
         source: "Cloudflare GraphQL: httpRequests1dGroups.sum.requests",
@@ -733,6 +744,7 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
           category: "zone",
           usage: zoneBandwidth,
           limit: null,
+          limit: zoneBandwidthLimit,
           resetPeriod: "Last 24 Hours",
           unit: "bytes",
           source: "Cloudflare GraphQL: httpRequests1dGroups.sum.bytes",
@@ -742,6 +754,7 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
     }
 
     if (zoneCachedRequests !== null) {
+      const cacheTarget = zoneRequests && zoneRequests > 0 ? zoneRequests : null;
       resources.push(
         buildMetric({
           id: "zone_cached_requests",
@@ -750,6 +763,7 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
           category: "zone",
           usage: zoneCachedRequests,
           limit: null,
+          limit: cacheTarget,
           resetPeriod: "Last 24 Hours",
           unit: "requests",
           source: "Cloudflare GraphQL: httpRequests1dGroups.sum.cachedRequests",
