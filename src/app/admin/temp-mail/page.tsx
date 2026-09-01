@@ -34,8 +34,8 @@ function safeNumber(value: unknown, fallback = 0): number {
 }
 
 function formatNumber(value: unknown): string {
-  const num = safeNumber(value);
-  return Number.isFinite(num) ? num.toLocaleString() : "0";
+  const num = safeNumber(value, null);
+  return num === null || !Number.isFinite(num) ? "Unavailable" : num.toLocaleString();
 }
 
 function formatBytes(value: unknown): string {
@@ -201,28 +201,28 @@ export default function TempMailPage() {
               <div className="space-y-4">
                 {Object.entries(cloudflareResources).map(([resource, usage]) => {
                   const resourceData = usage as Record<string, any> | null;
-                  const used = safeNumber(resourceData?.used ?? resourceData?.usage ?? 0);
-                  const limit = Math.max(safeNumber(resourceData?.actualLimit ?? resourceData?.limit ?? 0), 1);
-                  const percentage = limit > 0 ? (used / limit) * 100 : 0;
-                  const remaining = Math.max(limit - used, 0);
-                  const status = percentage >= 95 ? "Critical" : percentage >= 90 ? "Warning" : "Healthy";
-                  const tone = percentage >= 95 ? "bg-red-500" : percentage >= 90 ? "bg-amber-500" : "bg-emerald-500";
+                  const used = safeNumber(resourceData?.used ?? resourceData?.usage ?? null, null);
+                  const limit = safeNumber(resourceData?.actualLimit ?? resourceData?.limit ?? null, null);
+                  const percentage = used !== null && limit !== null && limit > 0 ? (used / limit) * 100 : null;
+                  const remaining = used !== null && limit !== null ? Math.max(limit - used, 0) : null;
+                  const status = percentage === null ? "Unavailable" : percentage >= 95 ? "Critical" : percentage >= 90 ? "Warning" : "Healthy";
+                  const tone = percentage === null ? "bg-slate-300" : percentage >= 95 ? "bg-red-500" : percentage >= 90 ? "bg-amber-500" : "bg-emerald-500";
 
                   return (
                     <div key={resource} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                       <div className="flex items-center justify-between gap-3">
                         <p className="text-base font-semibold capitalize text-slate-900">{resource.replace(/_/g, " ")}</p>
-                        <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${percentage >= 95 ? "bg-red-100 text-red-700" : percentage >= 90 ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${percentage === null ? "bg-slate-100 text-slate-700" : percentage >= 95 ? "bg-red-100 text-red-700" : percentage >= 90 ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
                           {status}
                         </span>
                       </div>
-                      <p className="mt-3 text-sm text-slate-600">{formatNumber(used)} / {formatNumber(limit)}</p>
+                      <p className="mt-3 text-sm text-slate-600">{used === null ? "Current Usage: Unavailable" : `${formatNumber(used)} / ${limit === null ? "Unavailable" : formatNumber(limit)}`}</p>
                       <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-slate-200">
-                        <div className={`${tone} h-full rounded-full`} style={{ width: `${Math.min(100, percentage)}%` }} />
+                        <div className={`${tone} h-full rounded-full`} style={{ width: `${percentage === null ? 0 : Math.min(100, percentage)}%` }} />
                       </div>
                       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-                        <span>Remaining: {formatNumber(remaining)}</span>
-                        <span>{percentage.toFixed(2)}% used</span>
+                        <span>Remaining: {remaining === null ? "Unavailable" : formatNumber(remaining)}</span>
+                        <span>{percentage === null ? "Unavailable" : `${percentage.toFixed(2)}% used`}</span>
                       </div>
                     </div>
                   );

@@ -3,6 +3,7 @@ import { requireAdminAuth } from "@/lib/admin-auth";
 import connectDb from "@/lib/mongodb";
 import { User, CronJob, TemporaryMailbox, TemporaryEmail, JobExecution } from "@/lib/models";
 import { logError } from "@/lib/security";
+import { getCloudflareUsageData } from "@/lib/cloudflare-usage";
 
 function safeNumber(value: unknown, fallback: number | null = 0): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -13,167 +14,8 @@ function safeNumber(value: unknown, fallback: number | null = 0): number | null 
   return fallback;
 }
 
-interface CloudflareResourceMetric {
-  name: string;
-  label: string;
-  current: number | null;
-  limit: number;
-  remaining: number;
-  percentage: number;
-  status: "healthy" | "warning" | "critical" | "unavailable";
-  resetPeriod: string;
-  unit?: string;
-}
-
-interface CloudflareUsageResponse {
-  resources: CloudflareResourceMetric[];
-  healthy: number;
-  warning: number;
-  critical: number;
-  unavailable: number;
-  timestamp: string;
-}
-
-function formatCloudflareUsage(rawData: any): CloudflareUsageResponse | null {
-  if (!rawData || typeof rawData !== "object" || !rawData.resources) {
-    return null;
-  }
-
-  const metrics: CloudflareResourceMetric[] = [];
-  let healthy = 0, warning = 0, critical = 0, unavailable = 0;
-
-  if (rawData.resources.worker_requests) {
-    const wr = rawData.resources.worker_requests;
-    const current = safeNumber(wr.used, null);
-    const limit = safeNumber(wr.actualLimit, 100000) || 100000;
-    const remaining = Math.max(0, limit - (current ?? 0));
-    const percentage = limit > 0 ? ((current ?? 0) / limit) * 100 : 0;
-    let status: "healthy" | "warning" | "critical" | "unavailable" = "healthy";
-    
-    if (current === null) {
-      status = "unavailable";
-      unavailable += 1;
-    } else if (percentage >= 95) {
-      status = "critical";
-      critical += 1;
-    } else if (percentage >= 90) {
-      status = "warning";
-      warning += 1;
-    } else {
-      healthy += 1;
-    }
-
-    metrics.push({
-      name: "worker_requests",
-      label: "Worker Requests",
-      current,
-      limit,
-      remaining,
-      percentage,
-      status,
-      resetPeriod: "Daily",
-      unit: "/day",
-    });
-  }
-
-  if (rawData.resources.d1_reads) {
-    const d1r = rawData.resources.d1_reads;
-    const current = safeNumber(d1r.used, null);
-    const limit = safeNumber(d1r.actualLimit, 5000000) || 5000000;
-    const remaining = Math.max(0, limit - (current ?? 0));
-    const percentage = limit > 0 ? ((current ?? 0) / limit) * 100 : 0;
-    let status: "healthy" | "warning" | "critical" | "unavailable" = "healthy";
-    
-    if (current === null) {
-      status = "unavailable";
-      unavailable += 1;
-    } else if (percentage >= 95) {
-      status = "critical";
-      critical += 1;
-    } else if (percentage >= 90) {
-      status = "warning";
-      warning += 1;
-    } else {
-      healthy += 1;
-    }
-
-    metrics.push({
-      name: "d1_reads",
-      label: "D1 Rows Read",
-      current,
-      limit,
-      remaining,
-      percentage,
-      status,
-      resetPeriod: "Daily",
-      unit: "/day",
-    });
-  }
-
-  if (rawData.resources.d1_writes) {
-    const d1w = rawData.resources.d1_writes;
-    const current = safeNumber(d1w.used, null);
-    const limit = safeNumber(d1w.actualLimit, 100000) || 100000;
-    const remaining = Math.max(0, limit - (current ?? 0));
-    const percentage = limit > 0 ? ((current ?? 0) / limit) * 100 : 0;
-    let status: "healthy" | "warning" | "critical" | "unavailable" = "healthy";
-    
-    if (current === null) {
-      status = "unavailable";
-      unavailable += 1;
-    } else if (percentage >= 95) {
-      status = "critical";
-      critical += 1;
-    } else if (percentage >= 90) {
-      status = "warning";
-      warning += 1;
-    } else {
-      healthy += 1;
-    }
-
-    metrics.push({
-      name: "d1_writes",
-      label: "D1 Rows Written",
-      current,
-      limit,
-      remaining,
-      percentage,
-      status,
-      resetPeriod: "Daily",
-      unit: "/day",
-    });
-  }
-
-  return {
-    resources: metrics,
-    healthy,
-    warning,
-    critical,
-    unavailable,
-    timestamp: new Date().toISOString(),
-  };
-}
-
-async function fetchCloudflareUsage(): Promise<CloudflareUsageResponse | null> {
-  const workerUrl = process.env.NEXT_PUBLIC_API_URL || "https://api.cronjobs.site";
-  const secret = process.env.TEMP_MAIL_SERVICE_SECRET;
-
-  if (!secret) return null;
-
-  try {
-    const res = await fetch(`${workerUrl}/api/temp-mail/usage`, {
-      headers: {
-        "x-temp-mail-service": secret,
-      },
-      cache: "no-store",
-    });
-
-    if (!res.ok) return null;
-    const data = await res.json();
-    return formatCloudflareUsage(data);
-  } catch {
-    return null;
-  }
+async function fetchCloudflareUsage() {
+  return getCloudflareUsageData();
 }
 
 export async function GET(req: NextRequest) {
@@ -237,7 +79,13 @@ export async function GET(req: NextRequest) {
         failedToday: safeNumber(failedToday),
         totalExecutions: safeNumber(totalExecutions),
       },
-      cloudflare,
+      cloudflare: {
+        ...cloudflare,
+        healthy: cloudflare.resources.filter((m) => m.status === "healthy").length,
+        warning: cloudflare.resources.filter((m) => m.status === "warning").length,
+        critical: cloudflare.resources.filter((m) => m.status === "critical").length,
+        unavailable: cloudflare.resources.filter((m) => m.status === "unavailable").length,
+      },
       lastUpdated: new Date().toISOString(),
     });
   } catch (error) {

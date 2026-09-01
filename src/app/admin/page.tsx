@@ -56,15 +56,17 @@ function safeNumber(value: unknown, fallback = 0): number {
 }
 
 function formatNumber(value: unknown): string {
-  return safeNumber(value).toLocaleString();
+  const num = safeNumber(value, null);
+  return num === null || !Number.isFinite(num) ? "Unavailable" : num.toLocaleString();
 }
 
 function formatPercent(value: unknown): string {
-  const percent = safeNumber(value);
-  return `${percent.toFixed(2)}%`;
+  const percent = safeNumber(value, null);
+  return percent === null || !Number.isFinite(percent) ? "Unavailable" : `${percent.toFixed(2)}%`;
 }
 
-function formatStatus(percent: number): string {
+function formatStatus(percent: number | null): string {
+  if (percent === null || !Number.isFinite(percent)) return "Unavailable";
   if (percent >= 95) return "Critical";
   if (percent >= 90) return "Warning";
   return "Healthy";
@@ -212,7 +214,7 @@ export default function AdminDashboard() {
     );
   }
 
-  const resources = stats.cloudflare?.resources ?? [];
+  const resources = Array.isArray(stats.cloudflare?.resources) ? stats.cloudflare?.resources ?? [] : [];
   const healthy = safeNumber(stats.cloudflare?.healthy, 0) || 0;
   const warning = safeNumber(stats.cloudflare?.warning, 0) || 0;
   const critical = safeNumber(stats.cloudflare?.critical, 0) || 0;
