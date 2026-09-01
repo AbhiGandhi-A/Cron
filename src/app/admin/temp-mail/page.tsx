@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { Toast } from "@/components/admin/Toast";
 import Link from "next/link";
-import { RefreshIcon, BroomIcon, ArrowRightIcon } from "@/components/admin/AdminIcons";
 
 interface CloudflareMetric {
   id: string;
@@ -167,7 +166,6 @@ export default function TempMailPage() {
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs transition disabled:opacity-60 cursor-pointer"
           >
             <span className={refreshing ? "animate-spin" : ""}>🔄</span>
-            <RefreshIcon className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
             {refreshing ? "Refreshing..." : "Refresh"}
           </button>
           <button
@@ -176,7 +174,6 @@ export default function TempMailPage() {
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-xs transition disabled:opacity-60 cursor-pointer"
           >
             <span>🧹</span>
-            <BroomIcon className="w-3.5 h-3.5" />
             {actionLoading ? "Processing..." : "Prune Expired Mailboxes"}
           </button>
         </div>
@@ -284,11 +281,8 @@ export default function TempMailPage() {
               <Link
                 href="/admin/settings"
                 className="text-xs font-semibold text-blue-600 hover:text-blue-700"
-                className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700"
               >
                 Settings →
-                <span>Settings</span>
-                <ArrowRightIcon className="w-3.5 h-3.5" />
               </Link>
             </div>
 

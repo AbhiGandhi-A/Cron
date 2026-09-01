@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { useState, useEffect, ComponentType, SVGProps } from "react";
 import Link from "next/link";
 import { Toast } from "@/components/admin/Toast";
@@ -110,13 +109,11 @@ interface StatCardProps {
   title: string;
   value: number | string;
   subtitle?: string;
-  icon: string;
   icon: ComponentType<SVGProps<SVGSVGElement>>;
   href?: string;
   accentColor?: "blue" | "emerald" | "amber" | "red" | "purple";
 }
 
-function SummaryCard({ title, value, subtitle, icon, href, accentColor = "blue" }: StatCardProps) {
 function SummaryCard({ title, value, subtitle, icon: Icon, href, accentColor = "blue" }: StatCardProps) {
   const iconBgs = {
     blue: "bg-blue-50 text-blue-600 border border-blue-100",
@@ -136,8 +133,6 @@ function SummaryCard({ title, value, subtitle, icon: Icon, href, accentColor = "
           </p>
           {subtitle && <p className="mt-1 text-xs text-slate-500">{subtitle}</p>}
         </div>
-        <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0 ${iconBgs[accentColor]}`}>
-          {icon}
         <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${iconBgs[accentColor]}`}>
           <Icon className="w-5 h-5" />
         </div>
@@ -308,7 +303,6 @@ export default function AdminDashboard() {
             disabled={refreshing}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition disabled:opacity-60 cursor-pointer"
           >
-            <span className={refreshing ? "animate-spin" : ""}>🔄</span>
             <RefreshIcon className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
             {refreshing ? "Refreshing..." : "Refresh"}
           </button>
@@ -323,7 +317,6 @@ export default function AdminDashboard() {
             title="Total Users"
             value={stats.users.total}
             subtitle="Registered accounts"
-            icon="👥"
             icon={UsersIcon}
             href="/admin/users"
             accentColor="blue"
@@ -332,7 +325,6 @@ export default function AdminDashboard() {
             title="Active Users"
             value={stats.users.active}
             subtitle="Logged in last 7 days"
-            icon="✅"
             icon={CheckCircleIcon}
             href="/admin/users"
             accentColor="emerald"
@@ -341,7 +333,6 @@ export default function AdminDashboard() {
             title="Blocked Users"
             value={stats.users.blocked}
             subtitle="Suspended accounts"
-            icon="🚫"
             icon={BanIcon}
             href="/admin/users?status=blocked"
             accentColor="red"
@@ -350,7 +341,6 @@ export default function AdminDashboard() {
             title="Temp Mailboxes"
             value={stats.tempMail.mailboxes}
             subtitle="Active disposable mailboxes"
-            icon="📬"
             icon={MailIcon}
             href="/admin/temp-mail"
             accentColor="purple"
@@ -369,7 +359,6 @@ export default function AdminDashboard() {
             href="/admin/settings"
             className="text-xs font-semibold text-blue-600 hover:text-blue-700 inline-flex items-center gap-1"
           >
-            Manage Settings →
             <span>Manage Settings</span>
             <ArrowRightIcon className="w-3.5 h-3.5" />
           </Link>
@@ -743,8 +732,6 @@ export default function AdminDashboard() {
               <h3 className="font-bold text-slate-900">Temporary Email Stats</h3>
               <p className="text-xs text-slate-500">Disposable mailboxes and message activity</p>
             </div>
-            <Link href="/admin/temp-mail" className="text-xs font-semibold text-blue-600 hover:text-blue-700">
-              Manage →
             <Link
               href="/admin/temp-mail"
               className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700"
@@ -780,10 +767,8 @@ export default function AdminDashboard() {
             <button
               onClick={clearExecutionLogs}
               disabled={deletingLogs}
-              className="text-xs font-semibold text-red-600 hover:text-red-700 disabled:opacity-50 cursor-pointer"
               className="inline-flex items-center gap-1.5 text-xs font-semibold text-red-600 hover:text-red-700 disabled:opacity-50 cursor-pointer"
             >
-              {deletingLogs ? "Clearing..." : "Delete Logs"}
               <TrashIcon className="w-3.5 h-3.5" />
               <span>{deletingLogs ? "Clearing..." : "Delete Logs"}</span>
             </button>
@@ -814,12 +799,8 @@ export default function AdminDashboard() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Link
             href="/admin/users"
-            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs hover:border-blue-300 hover:shadow-sm transition group"
             className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs hover:border-blue-300 hover:shadow-sm transition group flex flex-col justify-between"
           >
-            <div className="text-2xl mb-1.5">👥</div>
-            <div className="font-bold text-sm text-slate-900 group-hover:text-blue-600 transition">
-              Manage Users
             <div>
               <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mb-3">
                 <UsersIcon className="w-5 h-5" />
@@ -829,17 +810,12 @@ export default function AdminDashboard() {
               </div>
               <div className="text-xs text-slate-500 mt-1">Block, unblock, or delete user accounts</div>
             </div>
-            <div className="text-xs text-slate-500 mt-0.5">Block, unblock, or delete user accounts</div>
           </Link>
 
           <Link
             href="/admin/temp-mail"
-            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs hover:border-blue-300 hover:shadow-sm transition group"
             className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs hover:border-purple-300 hover:shadow-sm transition group flex flex-col justify-between"
           >
-            <div className="text-2xl mb-1.5">📧</div>
-            <div className="font-bold text-sm text-slate-900 group-hover:text-blue-600 transition">
-              Temp Mail Control
             <div>
               <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center mb-3">
                 <MailIcon className="w-5 h-5" />
@@ -849,17 +825,12 @@ export default function AdminDashboard() {
               </div>
               <div className="text-xs text-slate-500 mt-1">Monitor disposable inboxes & storage</div>
             </div>
-            <div className="text-xs text-slate-500 mt-0.5">Monitor disposable inboxes & storage</div>
           </Link>
 
           <Link
             href="/admin/health"
-            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs hover:border-blue-300 hover:shadow-sm transition group"
             className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs hover:border-rose-300 hover:shadow-sm transition group flex flex-col justify-between"
           >
-            <div className="text-2xl mb-1.5">❤️</div>
-            <div className="font-bold text-sm text-slate-900 group-hover:text-blue-600 transition">
-              System Health
             <div>
               <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center mb-3">
                 <HealthIcon className="w-5 h-5" />
@@ -869,17 +840,12 @@ export default function AdminDashboard() {
               </div>
               <div className="text-xs text-slate-500 mt-1">Live latency & connectivity diagnostics</div>
             </div>
-            <div className="text-xs text-slate-500 mt-0.5">Live latency & connectivity diagnostics</div>
           </Link>
 
           <Link
             href="/admin/settings"
-            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs hover:border-blue-300 hover:shadow-sm transition group"
             className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs hover:border-slate-300 hover:shadow-sm transition group flex flex-col justify-between"
           >
-            <div className="text-2xl mb-1.5">⚙️</div>
-            <div className="font-bold text-sm text-slate-900 group-hover:text-blue-600 transition">
-              Cloudflare Settings
             <div>
               <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center mb-3">
                 <SettingsIcon className="w-5 h-5" />
@@ -889,7 +855,6 @@ export default function AdminDashboard() {
               </div>
               <div className="text-xs text-slate-500 mt-1">Test connection & verify environment vars</div>
             </div>
-            <div className="text-xs text-slate-500 mt-0.5">Test connection & verify environment vars</div>
           </Link>
         </div>
       </section>

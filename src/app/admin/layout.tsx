@@ -5,19 +5,6 @@ import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { ReactNode } from "react";
 
-import {
-  DashboardIcon,
-  UsersIcon,
-  MailIcon,
-  ActivityIcon,
-  HealthIcon,
-  SettingsIcon,
-  ZapIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  LogoutIcon,
-} from "@/components/admin/AdminIcons";
-
 interface LayoutProps {
   children: ReactNode;
 }
@@ -107,12 +94,6 @@ export default function AdminLayout({ children }: LayoutProps) {
     { label: "Activity Log", href: "/admin/activity", icon: "📋" },
     { label: "System Health", href: "/admin/health", icon: "❤️" },
     { label: "Settings", href: "/admin/settings", icon: "⚙️" },
-    { label: "Dashboard", href: "/admin", icon: DashboardIcon },
-    { label: "Users", href: "/admin/users", icon: UsersIcon },
-    { label: "Temp Mail", href: "/admin/temp-mail", icon: MailIcon },
-    { label: "Activity Log", href: "/admin/activity", icon: ActivityIcon },
-    { label: "System Health", href: "/admin/health", icon: HealthIcon },
-    { label: "Settings", href: "/admin/settings", icon: SettingsIcon },
   ];
 
   const currentNav = navItems.find((n) => n.href === pathname)?.label || "Admin";
@@ -130,8 +111,6 @@ export default function AdminLayout({ children }: LayoutProps) {
           <Link href="/admin" className="flex items-center gap-2.5 overflow-hidden">
             <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-lg shadow-sm shrink-0">
               ⚡
-            <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold shadow-sm shrink-0">
-              <ZapIcon className="w-5 h-5" />
             </div>
             {sidebarOpen && (
               <div className="truncate">
@@ -146,7 +125,6 @@ export default function AdminLayout({ children }: LayoutProps) {
         <nav className="flex-1 p-3 space-y-1.5 overflow-y-auto">
           {navItems.map((item) => {
             const isActive = pathname === item.href;
-            const Icon = item.icon;
             return (
               <Link
                 key={item.href}
@@ -158,7 +136,6 @@ export default function AdminLayout({ children }: LayoutProps) {
                 }`}
               >
                 <span className="text-lg shrink-0">{item.icon}</span>
-                <Icon className={`w-5 h-5 shrink-0 ${isActive ? "text-blue-600" : "text-slate-400"}`} />
                 {sidebarOpen && <span className="truncate">{item.label}</span>}
               </Link>
             );
@@ -170,18 +147,9 @@ export default function AdminLayout({ children }: LayoutProps) {
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
             title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
           >
             <span>{sidebarOpen ? "← Collapse Sidebar" : "→"}</span>
-            {sidebarOpen ? (
-              <>
-                <ChevronLeftIcon className="w-4 h-4" />
-                <span>Collapse Sidebar</span>
-              </>
-            ) : (
-              <ChevronRightIcon className="w-4 h-4" />
-            )}
           </button>
         </div>
       </aside>
@@ -205,9 +173,7 @@ export default function AdminLayout({ children }: LayoutProps) {
             <button
               onClick={handleLogout}
               className="px-3.5 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 hover:border-red-300 transition-colors text-xs font-semibold shadow-xs"
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 hover:border-red-300 transition-colors text-xs font-semibold shadow-xs cursor-pointer"
             >
-              <LogoutIcon className="w-3.5 h-3.5" />
               Sign Out
             </button>
           </div>

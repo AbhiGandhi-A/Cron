@@ -2,8 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminAuth } from "@/lib/admin-auth";
 import connectDb from "@/lib/mongodb";
 import { User, CronJob, TemporaryMailbox, TemporaryEmail, JobExecution } from "@/lib/models";
+import { User, CronJob, JobExecution } from "@/lib/models";
 import { logError } from "@/lib/security";
 import { getCloudflareUsageData } from "@/lib/cloudflare-usage";
+import { getRealtimeTempMailStats } from "@/lib/temp-mail/admin-stats";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 function safeNumber(value: unknown, fallback: number | null = 0): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -52,6 +57,7 @@ export async function GET(req: NextRequest) {
       status: "FAILED",
     });
     const totalExecutions = await JobExecution.countDocuments();
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
     let cloudflare;
     try {
@@ -71,6 +77,45 @@ export async function GET(req: NextRequest) {
         resources: [],
       };
     }
+    const [
+      totalUsers,
+      activeUsers,
+      blockedUsers,
+      totalJobs,
+      activeJobs,
+      executionsToday,
+      failedToday,
+      totalExecutions,
+      tempMailStats,
+      cloudflareData,
+    ] = await Promise.all([
+      User.countDocuments(),
+      User.countDocuments({ lastLoginAt: { $gte: sevenDaysAgo } }),
+      User.countDocuments({ status: "blocked" }),
+      CronJob.countDocuments(),
+      CronJob.countDocuments({ isActive: true }),
+      JobExecution.countDocuments({ startedAt: { $gte: today } }),
+      JobExecution.countDocuments({ startedAt: { $gte: today }, status: "FAILED" }),
+      JobExecution.countDocuments(),
+      getRealtimeTempMailStats(),
+      getCloudflareUsageData().catch((cfErr) => {
+        logError("admin-stats", "Cloudflare usage fetch failed", cfErr);
+        return null;
+      }),
+    ]);
+
+    const cloudflare = cloudflareData || {
+      connected: false,
+      available: false,
+      configured: false,
+      account: null,
+      zone: null,
+      worker: null,
+      d1: null,
+      lastUpdated: new Date().toISOString(),
+      message: "Failed to fetch Cloudflare usage",
+      resources: [],
+    };
 
     const resources = Array.isArray(cloudflare.resources) ? cloudflare.resources : [];
 
@@ -86,6 +131,14 @@ export async function GET(req: NextRequest) {
         totalEmails: safeNumber(totalEmails, 0),
         emailsToday: safeNumber(emailsToday, 0),
         mailboxesToday: safeNumber(mailboxesToday, 0),
+        mailboxes: safeNumber(tempMailStats.mailboxes.active, 0),
+        totalMailboxes: safeNumber(tempMailStats.mailboxes.total, 0),
+        expiredMailboxes: safeNumber(tempMailStats.mailboxes.expired, 0),
+        deletedMailboxes: safeNumber(tempMailStats.mailboxes.deleted, 0),
+        mailboxesToday: safeNumber(tempMailStats.mailboxes.createdToday, 0),
+        totalEmails: safeNumber(tempMailStats.emails.total, 0),
+        emailsToday: safeNumber(tempMailStats.emails.createdToday, 0),
+        storageBytes: safeNumber(tempMailStats.storage.totalBytes, 0),
       },
       jobs: {
         total: safeNumber(totalJobs, 0),

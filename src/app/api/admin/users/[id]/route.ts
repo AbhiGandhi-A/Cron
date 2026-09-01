@@ -4,6 +4,10 @@ import connectDb from "@/lib/mongodb";
 import { User, TemporaryMailbox, TemporaryEmail, AdminAuditLog, CronJob, JobExecution } from "@/lib/models";
 import { logError } from "@/lib/security";
 import mongoose from "mongoose";
+import { getUserTempMailStats } from "@/lib/temp-mail/admin-stats";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function GET(
   req: NextRequest,
@@ -40,6 +44,8 @@ export async function GET(
     const emailCount = await TemporaryEmail.countDocuments({
       mailboxId: { $in: mailboxIds },
     });
+    // Get real-time temp mail stats (Cloudflare D1 + Mongo)
+    const tempMail = await getUserTempMailStats(user._id.toString());
 
     // Get job stats
     const jobCount = await CronJob.countDocuments({ userId: user._id });
@@ -61,6 +67,8 @@ export async function GET(
         enabled: !user.tempMailDisabled,
         mailboxes: mailboxes.length,
         emails: emailCount,
+        mailboxes: tempMail.mailboxes,
+        emails: tempMail.emails,
       },
       jobs: {
         total: jobCount,

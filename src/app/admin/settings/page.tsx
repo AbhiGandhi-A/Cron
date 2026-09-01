@@ -158,7 +158,6 @@ export default function SettingsPage() {
           disabled={testing}
           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition disabled:opacity-60 cursor-pointer"
         >
-          <span className={testing ? "animate-spin" : ""}>⚡</span>
           <ZapIcon className={`w-3.5 h-3.5 ${testing ? "animate-spin" : ""}`} />
           {testing ? "Testing Cloudflare..." : "Test Cloudflare Connection"}
         </button>
@@ -177,7 +176,6 @@ export default function SettingsPage() {
         <div className="space-y-6">
           {/* Notice Alert */}
           <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-4 text-xs text-blue-800 flex items-start gap-3">
-            <span className="text-base shrink-0">🔒</span>
             <LockIcon className="w-4 h-4 shrink-0 text-blue-700 mt-0.5" />
             <div>
               <span className="font-bold">Security Invariant:</span> Cloudflare credentials and API tokens are loaded
@@ -197,7 +195,6 @@ export default function SettingsPage() {
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <span className="text-xl">{testResult.connected ? "✅" : "⚠️"}</span>
                   {testResult.connected ? (
                     <CheckCircleIcon className="w-5 h-5 text-emerald-600 shrink-0" />
                   ) : (

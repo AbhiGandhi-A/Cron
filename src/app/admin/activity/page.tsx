@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { RefreshIcon, CheckCircleIcon, CloseIcon } from "@/components/admin/AdminIcons";
 
 interface ActivityLog {
   _id: string;
@@ -26,7 +25,6 @@ const actionLabels: Record<string, string> = {
   admin_login: "Admin Login",
   user_blocked: "User Blocked",
   user_unblocked: "User Unblocked",
-  user_updated: "User Updated",
   temp_mail_disabled: "Temp Mail Disabled",
   temp_mail_enabled: "Temp Mail Enabled",
   user_deleted: "User Deleted",
@@ -37,7 +35,6 @@ const actionBadges: Record<string, { bg: string; text: string; border: string }>
   admin_login: { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200" },
   user_blocked: { bg: "bg-red-50", text: "text-red-700", border: "border-red-200" },
   user_unblocked: { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200" },
-  user_updated: { bg: "bg-indigo-50", text: "text-indigo-700", border: "border-indigo-200" },
   temp_mail_disabled: { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200" },
   temp_mail_enabled: { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200" },
   user_deleted: { bg: "bg-red-50", text: "text-red-700", border: "border-red-200" },
@@ -118,7 +115,6 @@ export default function ActivityPage() {
           className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition disabled:opacity-60 cursor-pointer"
         >
           <span className={refreshing ? "animate-spin" : ""}>🔄</span>
-          <RefreshIcon className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
           {refreshing ? "Refreshing..." : "Refresh Logs"}
         </button>
       </div>
@@ -166,48 +162,32 @@ export default function ActivityPage() {
 
       {/* Activity Table */}
       <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-xs">
-      {/* Logs Table */}
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-xs overflow-hidden">
         {loading ? (
           <div className="py-16 text-center text-xs text-slate-500 flex flex-col items-center gap-2">
             <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
             Loading audit logs...
-          <div className="flex flex-col items-center justify-center py-20 space-y-3">
-            <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            <div className="text-sm text-slate-500 font-medium">Loading activity audit records...</div>
           </div>
         ) : logs.length === 0 ? (
           <div className="py-16 text-center text-xs text-slate-500">No activity logs found for the selected period.</div>
-          <div className="p-12 text-center text-slate-500 text-sm">
-            No activity logs found for the selected filter period.
-          </div>
         ) : (
           <>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider">
                   <tr>
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider">
                     <th className="px-5 py-3">Timestamp</th>
                     <th className="px-5 py-3">Action</th>
                     <th className="px-5 py-3">Admin IP</th>
                     <th className="px-5 py-3">Target User</th>
-                    <th className="px-5 py-3">IP Address</th>
-                    <th className="px-5 py-3">Target / Resource</th>
                     <th className="px-5 py-3">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {logs.map((log) => {
                     const badge = actionBadges[log.action] || { bg: "bg-slate-100", text: "text-slate-700", border: "border-slate-200" };
-                    const label = actionLabels[log.action] || log.action;
-
                     return (
                       <tr key={log._id} className="hover:bg-slate-50/80 transition-colors">
                         <td className="px-5 py-3.5 text-slate-600 font-mono text-[11px] whitespace-nowrap">
-                        <td className="px-5 py-3.5 text-slate-500 font-medium whitespace-nowrap">
                           {new Date(log.createdAt).toLocaleString()}
                         </td>
                         <td className="px-5 py-3.5">
@@ -215,8 +195,6 @@ export default function ActivityPage() {
                             className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${badge.bg} ${badge.text} ${badge.border}`}
                           >
                             {actionLabels[log.action] || log.action}
-                          <span className={`inline-block px-2.5 py-1 rounded-lg text-[11px] font-bold border ${badge.bg} ${badge.text} ${badge.border}`}>
-                            {label}
                           </span>
                         </td>
                         <td className="px-5 py-3.5 text-slate-500 font-mono text-[11px]">
@@ -240,16 +218,10 @@ export default function ActivityPage() {
                           {log.success ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                               <span>✓</span> Success
-                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              <CheckCircleIcon className="w-3 h-3 text-emerald-600" />
-                              <span>Success</span>
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-700 border border-red-200">
                               <span>✗</span> Failed
-                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-700 border border-red-200">
-                              <CloseIcon className="w-3 h-3 text-red-600" />
-                              <span>Failed</span>
                             </span>
                           )}
                         </td>

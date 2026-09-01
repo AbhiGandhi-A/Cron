@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminAuth } from "@/lib/admin-auth";
 import connectDb from "@/lib/mongodb";
 import { User, TemporaryMailbox, TemporaryEmail } from "@/lib/models";
+import { User } from "@/lib/models";
 import { logError } from "@/lib/security";
+import { getBatchUsersTempMailStats } from "@/lib/temp-mail/admin-stats";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function GET(req: NextRequest) {
   const authError = requireAdminAuth(req);
@@ -84,10 +89,16 @@ export async function GET(req: NextRequest) {
         },
       },
     ]);
+    // Enrich with real-time temp mail info (Cloudflare D1 + Mongo)
+    const userIds = users.map((u) => u._id.toString());
+    const tempMailMap = await getBatchUsersTempMailStats(userIds);
 
     const mailboxMap = Object.fromEntries(
       mailboxCounts.map((m) => [m._id, m.count])
     );
+    const enrichedUsers = users.map((user) => {
+      const uId = user._id?.toString() || "";
+      const stats = tempMailMap[uId] || { mailboxes: 0, emails: 0 };
 
     const enrichedUsers = await Promise.all(
       users.map(async (user) => {
@@ -99,6 +110,17 @@ export async function GET(req: NextRequest) {
             }),
           },
         });
+      return {
+        ...user,
+        status: user.status === "blocked" ? "blocked" : "active",
+        plan: user.plan || "free",
+        maxJobs: user.maxJobs || 10,
+        maxExecutions: user.maxExecutions || 1000,
+        tempMailDisabled: Boolean(user.tempMailDisabled),
+        tempMailboxes: stats.mailboxes,
+        tempEmails: stats.emails,
+      };
+    });
 
         return {
           ...user,

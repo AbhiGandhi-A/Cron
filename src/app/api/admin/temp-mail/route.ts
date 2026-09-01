@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminAuth, getClientIp } from "@/lib/admin-auth";
 import connectDb from "@/lib/mongodb";
 import { TemporaryMailbox, TemporaryEmail, AdminAuditLog } from "@/lib/models";
+import { TemporaryMailbox, AdminAuditLog } from "@/lib/models";
 import { logError } from "@/lib/security";
 import { getCloudflareUsageData } from "@/lib/cloudflare-usage";
+import { getRealtimeTempMailStats, cleanExpiredMailboxes } from "@/lib/temp-mail/admin-stats";
 
 function safeNumber(value: unknown, fallback: number = 0): number {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -13,6 +15,8 @@ function safeNumber(value: unknown, fallback: number = 0): number {
   }
   return fallback;
 }
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function GET(req: NextRequest) {
   const authError = requireAdminAuth(req);
@@ -55,6 +59,9 @@ export async function GET(req: NextRequest) {
           avgSize: { $avg: "$size" },
         },
       },
+    const [tempMailStats, cloudflareUsage] = await Promise.all([
+      getRealtimeTempMailStats(),
+      getCloudflareUsageData().catch(() => null),
     ]);
 
     const storage =
@@ -86,7 +93,11 @@ export async function GET(req: NextRequest) {
         totalBytes: safeNumber(storage?.totalSize, 0),
         averageEmailSize: safeNumber(storage?.avgSize, 0),
       },
+      mailboxes: tempMailStats.mailboxes,
+      emails: tempMailStats.emails,
+      storage: tempMailStats.storage,
       cloudflare: cloudflareUsage,
+      source: tempMailStats.source,
     });
   } catch (error) {
     logError("admin-temp-mail", "Failed to fetch temp mail stats", error);
@@ -120,6 +131,7 @@ export async function POST(req: NextRequest) {
         { status: "active", expiresAt: { $lt: now } },
         { $set: { status: "expired", deletedAt: new Date() } }
       );
+      const result = await cleanExpiredMailboxes();
 
       await AdminAuditLog.create({
         action: "mailbox_cleaned",
@@ -127,12 +139,18 @@ export async function POST(req: NextRequest) {
         targetUserId: null,
         targetUserEmail: null,
         details: { mailboxesMarkedExpired: result.modifiedCount },
+        details: {
+          mailboxesMarkedExpired: result.totalModified,
+          d1Modified: result.d1Modified,
+          mongoModified: result.mongoModified,
+        },
         success: true,
       }).catch(() => {});
 
       return NextResponse.json({
         success: true,
         message: `Marked ${result.modifiedCount} expired mailboxes.`,
+        message: `Marked ${result.totalModified} expired mailboxes across Cloudflare D1 & MongoDB.`,
       });
     }
 
