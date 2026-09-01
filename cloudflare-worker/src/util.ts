@@ -1,5 +1,5 @@
 const ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
-const MAILBOX_ID_LENGTH = 12;
+const MAILBOX_ID_LENGTH = 8;
 const TOKEN_BYTES = 32;
 
 const te = new TextEncoder();
@@ -11,7 +11,7 @@ function randomBytes(length: number): Uint8Array {
   return arr;
 }
 
-/** 12-char lowercase alphanumeric mailbox id (never an ObjectId). */
+/** 8-char lowercase alphanumeric mailbox id (never an ObjectId). */
 export function generateMailboxId(): string {
   const bytes = randomBytes(MAILBOX_ID_LENGTH);
   let result = "";

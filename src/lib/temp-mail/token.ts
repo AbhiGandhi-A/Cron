@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-const MAILBOX_ID_LENGTH = 12;
+const MAILBOX_ID_LENGTH = 8;
 const MAILBOX_TOKEN_LENGTH = 32;
 const ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
 
