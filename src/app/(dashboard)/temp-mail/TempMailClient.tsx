@@ -64,9 +64,7 @@ export default function TempMailClient() {
 
   useEffect(() => {
     setMounted(true);
-    setMailbox(null);
-    setMessages([]);
-    setError(null);
+    void loadInitial();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
