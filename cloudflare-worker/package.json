@@ -1,0 +1,22 @@
+{
+  "name": "cronjobs-temp-mail-worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare Worker backend for the temporary email service (cronjobs-worker).",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "migrate:local": "wrangler d1 migrations apply cronjobs_temp_mail_db --local",
+    "migrate:remote": "wrangler d1 migrations apply cronjobs_temp_mail_db --remote",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts"  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.8.0",
+    "@cloudflare/workers-types": "^4.20250530.0",
+    "miniflare": "^3.20250517.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "vitest": "^2.1.9",
+    "wrangler": "^3.90.0"
+  }
+}

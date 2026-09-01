@@ -67,6 +67,7 @@ export default withAuth(
           pathname === "/" ||
           pathname === "/auth/login" ||
           pathname === "/auth/register" ||
+          pathname === "/admin/login" ||
           publicPages.some(
             (p) => pathname === p || pathname.startsWith(p + "/")
           );
@@ -82,6 +83,6 @@ export default withAuth(
 
 export const config = {
   matcher: [
-    "/((?!auth|api/auth|api/test|api/public|_next/static|_next/image|favicon.ico).*)",
+    "/((?!auth|api/auth|api/test|api/public|api/temp-mail/webhook|_next/static|_next/image|favicon.ico).*)",
   ],
 };

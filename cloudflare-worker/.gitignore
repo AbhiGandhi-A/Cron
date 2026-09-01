@@ -1,0 +1,14 @@
+# Local worker env (secrets) - never commit
+.dev.vars
+
+# Wrangler local state
+.wrangler/
+.wrangler
+
+# Compiled output
+dist/
+node_modules/
+
+# Logs / OS
+*.log
+.DS_Store

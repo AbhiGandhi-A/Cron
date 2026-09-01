@@ -1,0 +1,1 @@
+{"query":"query { viewer { accounts(filter: {accountTag: \"5430701eef66433636a9b9612f4f0c05\"}) { workersInvocationsAdaptive(limit: 10000, filter: {scriptName: \"cronjobs-worker\", datetime_geq: \"2026-09-01T00:00:00Z\", datetime_leq: \"2026-09-02T00:00:00Z\"}) { sum { requests errors subrequests } } } } }"}

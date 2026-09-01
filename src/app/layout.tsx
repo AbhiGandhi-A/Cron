@@ -86,7 +86,7 @@ export const metadata: Metadata = {
     "msapplication-TileColor": BRAND_COLOR,
     "msapplication-tooltip": SITE_NAME,
     "apple-mobile-web-app-title": SITE_NAME,
-    "apple-mobile-web-app-capable": "yes",
+    "mobile-web-app-capable": "yes",
   },
 };
 
