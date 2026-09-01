@@ -44,6 +44,15 @@ export default function TempMailClient() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [usageProtection, setUsageProtection] = useState<{
+    status: "healthy" | "warning" | "blocked";
+    resource?: string;
+    used?: number;
+    safetyLimit?: number;
+    actualLimit?: number;
+    percentageOfSafetyLimit?: number;
+    resetsAt?: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const [generateConfirm, setGenerateConfirm] = useState(false);
@@ -73,40 +82,26 @@ export default function TempMailClient() {
     setError(null);
     try {
       const res = await fetch("/api/temp-mail", { cache: "no-store" });
+      const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (res.status === 503) {
           setConfigured(false);
           setMailbox(null);
           return;
         }
-        const body = await res.json().catch(() => ({}));
+        if (res.status === 429 && body.error === "TEMP_MAIL_USAGE_LIMIT") {
+          setUsageProtection(body.usageProtection ?? null);
+          setConfigured(true);
+          setLoading(false);
+          return;
+        }
         throw new Error(body.error || "Failed to load mailbox");
       }
-      let data = await res.json();
+      const data = body;
       setConfigured(data.configured ?? true);
+      setUsageProtection(data.usageProtection ?? null);
 
-      if (!data.mailbox && (data.configured ?? true)) {
-        const createRes = await fetch("/api/temp-mail", { method: "POST" });
-        if (createRes.ok) {
-          const created = await createRes.json();
-          data = { mailbox: created, configured: true };
-          setMailbox(created);
-          await refreshMessages(created);
-          return;
-        }
-        if (createRes.status === 503) {
-          setConfigured(false);
-          setMailbox(null);
-          return;
-        }
-        if (createRes.status === 429) {
-          setMailbox(null);
-          return;
-        }
-        throw new Error("Failed to create mailbox");
-      }
-
-      setMailbox(data.mailbox);
+      setMailbox(data.mailbox ?? null);
       if (data.mailbox && !data.mailbox.isExpired) {
         await refreshMessages(data.mailbox);
       } else {
@@ -118,6 +113,7 @@ export default function TempMailClient() {
       setLoading(false);
       firstLoadDone.current = true;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const refreshMessages = useCallback(
@@ -149,15 +145,47 @@ export default function TempMailClient() {
     []
   );
 
+  const createMailbox = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/temp-mail", { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      
+      if (!res.ok) {
+        if (res.status === 503) {
+          setConfigured(false);
+          setMailbox(null);
+          return;
+        }
+        if (res.status === 429) {
+          setUsageProtection(body.usageProtection ?? null);
+          setMailbox(null);
+          return;
+        }
+        throw new Error(body.error || "Failed to create mailbox");
+      }
+
+      const created = body;
+      setMailbox(created);
+      setConfigured(true);
+      await refreshMessages(created);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create mailbox");
+    } finally {
+      setLoading(false);
+    }
+  }, [refreshMessages]);
+
   useEffect(() => {
-    if (!mailbox || mailbox.isExpired) return;
+    if (!mailbox || mailbox.isExpired || usageProtection?.status === "blocked") return;
     const interval = setInterval(() => {
       if (!activePollRef.current) return;
       if (document.visibilityState === "hidden") return;
       void refreshMessages(mailboxRef.current!);
     }, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [mailbox, mailbox?.isExpired, refreshMessages]);
+  }, [mailbox, mailbox?.isExpired, refreshMessages, usageProtection?.status]);
 
   const copyEmail = useCallback(async () => {
     if (!mailbox) return;
@@ -170,7 +198,7 @@ export default function TempMailClient() {
   }, [mailbox, toast]);
 
   const handleRefresh = useCallback(async () => {
-    if (!mailbox) return;
+    if (!mailbox || usageProtection?.status === "blocked") return;
     setRefreshing(true);
     try {
       await refreshMessages(mailbox);
@@ -178,7 +206,7 @@ export default function TempMailClient() {
     } finally {
       setRefreshing(false);
     }
-  }, [mailbox, refreshMessages, toast]);
+  }, [mailbox, refreshMessages, toast, usageProtection?.status]);
 
   const handleGenerateNew = useCallback(async () => {
     setGenerateConfirm(false);
@@ -186,8 +214,8 @@ export default function TempMailClient() {
       await fetch("/api/temp-mail", { method: "DELETE" }).catch(() => {});
     }
     toast.showToast("Generating a new temporary email...", "info");
-    await loadInitial();
-  }, [mailbox, loadInitial, toast]);
+    await createMailbox();
+  }, [mailbox, createMailbox, toast]);
 
   const handleDelete = useCallback(async () => {
     setDeleteConfirm(false);
@@ -303,7 +331,7 @@ export default function TempMailClient() {
           </div>
         )}
 
-        {!error && configured !== false && !loading && (
+        {!error && configured !== false && !loading && usageProtection?.status !== "blocked" && (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-base font-bold text-gray-900">Your temporary email</h2>
@@ -317,7 +345,7 @@ export default function TempMailClient() {
             {!mailbox && (
               <div className="text-center py-4">
                 <button
-                  onClick={() => void loadInitial()}
+                  onClick={() => void createMailbox()}
                   className="px-6 py-3 bg-brand-600 text-white text-sm font-semibold rounded-xl hover:bg-brand-700 shadow-sm transition-colors"
                 >
                   Create temporary email
@@ -404,7 +432,7 @@ export default function TempMailClient() {
           </div>
         )}
 
-        {mailbox && !mailbox.isExpired && isExpired === false && (
+        {mailbox && !mailbox.isExpired && isExpired === false && usageProtection?.status !== "blocked" && (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
               <h2 className="text-base font-bold text-gray-900">Inbox</h2>

@@ -1,6 +1,14 @@
 import type { Env, MailboxSummary } from "./types";
 import { TempMailStore } from "./store";
 import { timingSafeEqual } from "./util";
+import {
+  getUsageConfig,
+  getUsageSnapshot,
+  recordUsage,
+  type UsageConfig,
+  type UsageResourceName,
+  type UsageStatus,
+} from "./usage";
 
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
@@ -40,6 +48,35 @@ async function isServiceAuthorized(request: Request, env: Env): Promise<boolean>
  * service secret header `x-temp-mail-service`. CORS is also enabled so the
  * existing frontend can call the message endpoints directly if desired.
  */
+function getResourceNameFromPath(path: string): UsageResourceName | null {
+  if (path === "/api/temp-mail" || path.startsWith("/api/temp-mail/")) return "worker_requests";
+  return null;
+}
+
+function buildUsageProtectionPayload(
+  env: Env,
+  status: UsageStatus,
+  resource: UsageResourceName | null,
+  now: Date = new Date()
+) {
+  const config = getUsageConfig(env as Record<string, string | undefined>);
+  const snapshot = getUsageSnapshot(env as Record<string, string | undefined>, now);
+  const resourceEntry = resource ? snapshot.resources[resource] : null;
+
+  return {
+    enabled: config.enabled,
+    status,
+    resource: resourceEntry?.resource || resource,
+    used: resourceEntry?.used ?? 0,
+    safetyLimit: resourceEntry?.safetyLimit ?? 0,
+    actualLimit: resourceEntry?.actualLimit ?? 0,
+    percentageOfSafetyLimit: resourceEntry?.percentageOfSafetyLimit ?? 0,
+    remainingBeforeBlock: resourceEntry?.remainingBeforeBlock ?? 0,
+    remainingToSafetyLimit: resourceEntry?.remainingToSafetyLimit ?? 0,
+    resetsAt: snapshot.resetsAt,
+  };
+}
+
 export async function handleFetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname;
@@ -65,10 +102,34 @@ export async function handleFetch(request: Request, env: Env, _ctx: ExecutionCon
     return json(401, { error: "Unauthorized" }, request);
   }
   const store = new TempMailStore(env);
+  const config = getUsageConfig(env as Record<string, string | undefined>);
+  const resourceName = getResourceNameFromPath(path);
+
+  if (resourceName && path !== "/api/temp-mail/usage") {
+    const currentState = getUsageSnapshot(env as Record<string, string | undefined>);
+    if (currentState.enabled && currentState.status === "blocked") {
+      return json(429, {
+        error: "TEMP_MAIL_USAGE_LIMIT",
+        message: "Temporary Email is temporarily unavailable because today's safety limit has been reached.",
+        usageProtection: buildUsageProtectionPayload(env, "blocked", resourceName),
+      }, request);
+    }
+  }
 
   type MailboxResult = MailboxSummary | null;
 
   try {
+    if (path === "/api/temp-mail/usage" && request.method === "GET") {
+      const snapshot = getUsageSnapshot(env as Record<string, string | undefined>);
+      return json(200, {
+        enabled: config.enabled,
+        date: snapshot.date,
+        status: snapshot.status,
+        resources: snapshot.resources,
+        resetsAt: snapshot.resetsAt,
+      }, request);
+    }
+
     // GET /api/temp-mail  -> current active mailbox (with fresh token) + configured
     if (path === "/api/temp-mail" && request.method === "GET") {
       const ownerId = url.searchParams.get("ownerId");
@@ -79,7 +140,12 @@ export async function handleFetch(request: Request, env: Env, _ctx: ExecutionCon
         const token = await store.rotateToken(ownerId, active.publicAddress);
         mailbox = { ...active, mailboxToken: token || "" };
       }
-      return json(200, { mailbox, configured: true }, request);
+      const usageCount = recordUsage("worker_requests", 1, config);
+      const payload = { mailbox, configured: true };
+      if (usageCount.status === "warning") {
+        return json(200, { ...payload, usageProtection: buildUsageProtectionPayload(env, "warning", "worker_requests") }, request);
+      }
+      return json(200, payload, request);
     }
 
     // POST /api/temp-mail  -> create (or reuse + refresh) a mailbox
@@ -89,7 +155,12 @@ export async function handleFetch(request: Request, env: Env, _ctx: ExecutionCon
       if (!ownerId) return json(400, { error: "ownerId required" }, request);
       const existing = await store.getActiveMailbox(ownerId);
       const created = await store.createMailbox(ownerId, existing);
-      return json(201, { mailbox: created, configured: true }, request);
+      const usageCount = recordUsage("worker_requests", 1, config);
+      const payload = { mailbox: created, configured: true };
+      if (usageCount.status === "warning") {
+        return json(201, { ...payload, usageProtection: buildUsageProtectionPayload(env, "warning", "worker_requests") }, request);
+      }
+      return json(201, payload, request);
     }
 
     // DELETE /api/temp-mail  -> delete current mailbox
@@ -100,7 +171,12 @@ export async function handleFetch(request: Request, env: Env, _ctx: ExecutionCon
       if (!ownerId) return json(400, { error: "ownerId required" }, request);
       if (!publicAddress) return json(400, { error: "publicAddress required" }, request);
       const deleted = await store.deleteMailboxByAddress(ownerId, publicAddress);
-      return json(200, { deleted }, request);
+      const usageCount = recordUsage("worker_requests", 1, config);
+      const payload = { deleted };
+      if (usageCount.status === "warning") {
+        return json(200, { ...payload, usageProtection: buildUsageProtectionPayload(env, "warning", "worker_requests") }, request);
+      }
+      return json(200, payload, request);
     }
 
     // GET /api/temp-mail/messages?ownerId=&publicAddress=&mailboxToken=&page=&limit=
@@ -113,6 +189,10 @@ export async function handleFetch(request: Request, env: Env, _ctx: ExecutionCon
       if (!mailbox) return json(404, { error: "Mailbox not found" }, request);
       const { page, limit } = parsePageLimit(url.searchParams.get("page"), url.searchParams.get("limit"), getPageSizeEnv(env));
       const data = await store.listMessages(mailbox.id, page, limit);
+      const usageCount = recordUsage("worker_requests", 1, config);
+      if (usageCount.status === "warning") {
+        return json(200, { ...data, usageProtection: buildUsageProtectionPayload(env, "warning", "worker_requests") }, request);
+      }
       return json(200, data, request);
     }
 
@@ -131,14 +211,26 @@ export async function handleFetch(request: Request, env: Env, _ctx: ExecutionCon
       if (request.method === "GET") {
         const msg = await store.getMessage(mailbox.id, emailId);
         if (!msg) return json(404, { error: "Message not found" }, request);
+        const usageCount = recordUsage("worker_requests", 1, config);
+        if (usageCount.status === "warning") {
+          return json(200, { message: msg, usageProtection: buildUsageProtectionPayload(env, "warning", "worker_requests") }, request);
+        }
         return json(200, { message: msg }, request);
       }
       if (request.method === "POST" && isRead) {
         const ok = await store.markMessageRead(mailbox.id, emailId);
+        const usageCount = recordUsage("worker_requests", 1, config);
+        if (usageCount.status === "warning") {
+          return json(200, { read: ok, usageProtection: buildUsageProtectionPayload(env, "warning", "worker_requests") }, request);
+        }
         return json(200, { read: ok }, request);
       }
       if (request.method === "DELETE") {
         const ok = await store.deleteMessage(mailbox.id, emailId);
+        const usageCount = recordUsage("worker_requests", 1, config);
+        if (usageCount.status === "warning") {
+          return json(200, { deleted: ok, usageProtection: buildUsageProtectionPayload(env, "warning", "worker_requests") }, request);
+        }
         return json(200, { deleted: ok }, request);
       }
       return json(405, { error: "Method not allowed" }, request);
@@ -154,6 +246,10 @@ export async function handleFetch(request: Request, env: Env, _ctx: ExecutionCon
       const mailbox = await store.verifyMailboxToken(publicAddress, mailboxToken || "", ownerId);
       if (!mailbox) return json(404, { error: "Mailbox not found" }, request);
       const token = await store.rotateToken(ownerId, mailbox.publicAddress);
+      const usageCount = recordUsage("worker_requests", 1, config);
+      if (usageCount.status === "warning") {
+        return json(200, { refreshedAt: new Date().toISOString(), mailboxToken: token, usageProtection: buildUsageProtectionPayload(env, "warning", "worker_requests") }, request);
+      }
       return json(200, { refreshedAt: new Date().toISOString(), mailboxToken: token }, request);
     }
 
