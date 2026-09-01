@@ -22,8 +22,9 @@ export function hashMailboxToken(token: string): string {
 }
 
 export function getExpirationMinutes(): number {
-  const val = parseInt(process.env.TEMP_MAIL_EXPIRATION_MINUTES || "30", 10);
-  if (Number.isNaN(val) || val < 1 || val > 1440) return 30;
+  const defaultMinutes = 100 * 365 * 24 * 60;
+  const val = parseInt(process.env.TEMP_MAIL_EXPIRATION_MINUTES || String(defaultMinutes), 10);
+  if (Number.isNaN(val) || val < 1 || val > 100 * 365 * 24 * 60) return defaultMinutes;
   return val;
 }
 

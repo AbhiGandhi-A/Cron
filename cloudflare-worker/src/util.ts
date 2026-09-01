@@ -57,10 +57,11 @@ export function nowIso(): string {
   return new Date().toISOString();
 }
 
-/** Mailbox lifetime in minutes from env (clamped 1-1440, default 30). */
+/** Mailbox lifetime in minutes from env (clamped to a long-lived default). */
 export function getExpirationMinutes(env: { TEMP_MAIL_EXPIRATION_MINUTES?: string }): number {
-  const val = parseInt(env.TEMP_MAIL_EXPIRATION_MINUTES || "30", 10);
-  if (Number.isNaN(val) || val < 1 || val > 1440) return 30;
+  const defaultMinutes = 100 * 365 * 24 * 60;
+  const val = parseInt(env.TEMP_MAIL_EXPIRATION_MINUTES || String(defaultMinutes), 10);
+  if (Number.isNaN(val) || val < 1 || val > defaultMinutes) return defaultMinutes;
   return val;
 }
 

@@ -54,23 +54,30 @@ export class TempMailStore {
     return { id, publicAddress: address, mailboxToken: token, expiresAt, createdAt };
   }
 
-  /** Return the owner's active (non-expired) mailbox, or null. */
+  /** Return the owner's active mailbox, reactivating legacy expired rows. */
   async getActiveMailbox(ownerId: string): Promise<{ id: string; publicAddress: string; expiresAt: string; createdAt: string } | null> {
-    const now = nowIso();
     const row = await this.db
       .prepare(
-        `SELECT id, public_address, expires_at, created_at
+        `SELECT id, public_address, expires_at, created_at, status
          FROM mailboxes
-         WHERE owner_id = ?1 AND status = '${ACTIVE}'
+         WHERE owner_id = ?1 AND status != 'deleted'
          ORDER BY created_at DESC LIMIT 1`,
       )
       .bind(ownerId)
-      .first<{ id: string; public_address: string; expires_at: string; created_at: string }>();
+      .first<{ id: string; public_address: string; expires_at: string; created_at: string; status: string }>();
     if (!row) return null;
+    let expiresAt = row.expires_at;
+    if (row.status === EXPIRED) {
+      expiresAt = new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000).toISOString();
+      await this.db
+        .prepare("UPDATE mailboxes SET status = ?, expires_at = ? WHERE id = ?")
+        .bind(ACTIVE, expiresAt, row.id)
+        .run();
+    }
     return {
       id: row.id,
       publicAddress: row.public_address,
-      expiresAt: row.expires_at,
+      expiresAt,
       createdAt: row.created_at,
     };
   }
@@ -88,7 +95,7 @@ export class TempMailStore {
     return token;
   }
 
-  /** Verify address+token (+owner) is active and not expired. */
+  /** Verify address+token (+owner) is still usable; legacy expired records are reactivated. */
   async verifyMailboxToken(
     address: string,
     token: string,
@@ -98,7 +105,7 @@ export class TempMailStore {
     const row = await this.db
       .prepare(
         `SELECT id, owner_id, public_address, token_hash, expires_at, status
-         FROM mailboxes WHERE public_address = ?1`,
+         FROM mailboxes WHERE public_address = ?1 AND status != 'deleted'`,
       )
       .bind(addr)
       .first<{
@@ -110,8 +117,15 @@ export class TempMailStore {
         status: string;
       }>();
     if (!row) return null;
-    if (row.status !== ACTIVE) return null;
     if (ownerId !== undefined && row.owner_id !== ownerId) return null;
+    if (row.status === EXPIRED) {
+      const reactivatedExpiresAt = new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000).toISOString();
+      await this.db
+        .prepare("UPDATE mailboxes SET status = ?, expires_at = ? WHERE id = ?")
+        .bind(ACTIVE, reactivatedExpiresAt, row.id)
+        .run();
+      row.expires_at = reactivatedExpiresAt;
+    }
     const presentedHash = await this.helpers.hashToken(token);
     const ok = await this.helpers.timingSafeEqual(presentedHash, row.token_hash);
     if (!ok) return null;
@@ -123,16 +137,22 @@ export class TempMailStore {
     };
   }
 
-  /** Look up an active mailbox by address (for inbound email routing). */
+  /** Look up an active mailbox by address (for inbound email routing). Legacy expired rows are reactivated automatically. */
   async getActiveMailboxByAddress(address: string): Promise<{ id: string; publicAddress: string } | null> {
     const row = await this.db
       .prepare(
-        `SELECT id, public_address FROM mailboxes
-         WHERE public_address = ?1 AND status = 'active' LIMIT 1`,
+        `SELECT id, public_address, status FROM mailboxes
+         WHERE public_address = ?1 AND status != 'deleted' LIMIT 1`,
       )
       .bind(address)
-      .first<{ id: string; public_address: string }>();
+      .first<{ id: string; public_address: string; status: string }>();
     if (!row) return null;
+    if (row.status === EXPIRED) {
+      await this.db
+        .prepare("UPDATE mailboxes SET status = ?, expires_at = ? WHERE id = ?")
+        .bind(ACTIVE, new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000).toISOString(), row.id)
+        .run();
+    }
     return { id: row.id, publicAddress: row.public_address };
   }
 
@@ -292,17 +312,23 @@ export class TempMailStore {
     return res.meta.changes > 0;
   }
 
-  /** Find an active mailbox by owner + address (for message operations). */
+  /** Find a mailbox by owner + address (legacy expired rows remain valid until explicit delete). */
   async getMailboxByOwnerAddress(ownerId: string, publicAddress: string): Promise<{ id: string; publicAddress: string } | null> {
     const addr = publicAddress.trim().toLowerCase();
     const row = await this.db
       .prepare(
-        `SELECT id, public_address FROM mailboxes
-         WHERE owner_id = ?1 AND public_address = ?2 AND status = 'active' LIMIT 1`,
+        `SELECT id, public_address, status FROM mailboxes
+         WHERE owner_id = ?1 AND public_address = ?2 AND status != 'deleted' LIMIT 1`,
       )
       .bind(ownerId, addr)
-      .first<{ id: string; public_address: string }>();
+      .first<{ id: string; public_address: string; status: string }>();
     if (!row) return null;
+    if (row.status === EXPIRED) {
+      await this.db
+        .prepare("UPDATE mailboxes SET status = ?, expires_at = ? WHERE id = ?")
+        .bind(ACTIVE, new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000).toISOString(), row.id)
+        .run();
+    }
     return { id: row.id, publicAddress: row.public_address };
   }
 
@@ -310,7 +336,7 @@ export class TempMailStore {
   async deleteMailboxByAddress(ownerId: string, publicAddress: string): Promise<boolean> {
     const addr = publicAddress.trim().toLowerCase();
     const row = await this.db
-      .prepare("SELECT id FROM mailboxes WHERE owner_id = ?1 AND public_address = ?2 AND status = 'active'")
+      .prepare("SELECT id FROM mailboxes WHERE owner_id = ?1 AND public_address = ?2 AND status != 'deleted'")
       .bind(ownerId, addr)
       .first<{ id: string }>();
     if (!row) return false;

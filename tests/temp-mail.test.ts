@@ -126,18 +126,18 @@ test("hashMailboxToken is deterministic and one-way", () => {
   assert.notEqual(hashMailboxToken(t), t, "hash must not equal the plain token");
 });
 
-test("getExpirationMinutes defaults to 30 and clamps bad values", () => {
+test("getExpirationMinutes defaults to a long-lived mailbox lifetime and clamps bad values", () => {
   const prev = process.env.TEMP_MAIL_EXPIRATION_MINUTES;
   delete process.env.TEMP_MAIL_EXPIRATION_MINUTES;
-  assert.equal(getExpirationMinutes(), 30);
+  assert.equal(getExpirationMinutes(), 100 * 365 * 24 * 60);
   process.env.TEMP_MAIL_EXPIRATION_MINUTES = "15";
   assert.equal(getExpirationMinutes(), 15);
   process.env.TEMP_MAIL_EXPIRATION_MINUTES = "abc";
-  assert.equal(getExpirationMinutes(), 30);
+  assert.equal(getExpirationMinutes(), 100 * 365 * 24 * 60);
   process.env.TEMP_MAIL_EXPIRATION_MINUTES = "0";
-  assert.equal(getExpirationMinutes(), 30);
+  assert.equal(getExpirationMinutes(), 100 * 365 * 24 * 60);
   process.env.TEMP_MAIL_EXPIRATION_MINUTES = "99999";
-  assert.equal(getExpirationMinutes(), 30);
+  assert.equal(getExpirationMinutes(), 99999);
   if (prev === undefined) delete process.env.TEMP_MAIL_EXPIRATION_MINUTES;
   else process.env.TEMP_MAIL_EXPIRATION_MINUTES = prev;
 });
@@ -276,6 +276,24 @@ test("verifyMailboxOwnership keeps active mailboxes valid even when expiresAt is
   });
   const result = await verifyMailboxOwnership(owner, knownToken, mb.publicAddress);
   assert.equal(result.valid, true, "active mailbox must remain valid regardless of stale expiresAt metadata");
+  await TemporaryMailbox.deleteOne({ _id: mb._id });
+});
+
+test("verifyMailboxOwnership keeps previously expired-status mailboxes usable until explicit delete", async (t) => {
+  if (setupError) return t.skip("mongodb-memory-server unavailable: " + setupError.message);
+  const owner = userId();
+  const knownToken = "legacy-expired-token";
+  const mb = await TemporaryMailbox.create({
+    ownerId: owner,
+    publicAddress: `legacy${Date.now()}@temp.cronjobs.site`,
+    mailboxTokenHash: hashMailboxToken(knownToken),
+    status: "expired",
+    expiresAt: new Date(Date.now() - 1000),
+  });
+
+  const result = await verifyMailboxOwnership(owner, knownToken, mb.publicAddress);
+  assert.equal(result.valid, true, "expired-status mailbox should remain usable until the user explicitly deletes it");
+
   await TemporaryMailbox.deleteOne({ _id: mb._id });
 });
 

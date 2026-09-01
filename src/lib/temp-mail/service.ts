@@ -73,12 +73,28 @@ export async function getActiveMailbox(ownerId: string): Promise<{
 
   const mailbox = await TemporaryMailbox.findOne({
     ownerId,
-    status: "active",
+    status: { $in: ["active", "expired"] },
   })
     .sort({ createdAt: -1 })
     .lean();
 
   if (!mailbox) return null;
+
+  if (mailbox.status === "expired") {
+    const nextExpiresAt = new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000);
+    await TemporaryMailbox.updateOne(
+      { _id: mailbox._id },
+      {
+        $set: {
+          status: "active",
+          deletedAt: null,
+          expiresAt: nextExpiresAt,
+        },
+      }
+    );
+    mailbox.status = "active";
+    mailbox.expiresAt = nextExpiresAt;
+  }
 
   const mailboxToken = generateMailboxToken();
   const mailboxTokenHash = hashMailboxToken(mailboxToken);
@@ -110,7 +126,7 @@ export async function deleteMailbox(ownerId: string): Promise<boolean> {
 
   const mailbox = await TemporaryMailbox.findOne({
     ownerId,
-    status: "active",
+    status: { $in: ["active", "expired"] },
   });
 
   if (!mailbox) return false;
@@ -142,12 +158,28 @@ export async function verifyMailboxOwnership(
 
   const mailbox = await TemporaryMailbox.findOne({
     publicAddress: publicAddress.toLowerCase().trim(),
-    status: "active",
+    status: { $in: ["active", "expired"] },
   }).lean<LeanMailbox>();
 
   if (!mailbox) return { valid: false };
 
   if (mailbox.ownerId !== ownerId) return { valid: false };
+
+  if (mailbox.status === "expired") {
+    const nextExpiresAt = new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000);
+    await TemporaryMailbox.updateOne(
+      { _id: mailbox._id },
+      {
+        $set: {
+          status: "active",
+          deletedAt: null,
+          expiresAt: nextExpiresAt,
+        },
+      }
+    );
+    mailbox.status = "active";
+    mailbox.expiresAt = nextExpiresAt;
+  }
 
   const tokenHash = hashMailboxToken(mailboxToken);
   if (tokenHash !== mailbox.mailboxTokenHash) return { valid: false };

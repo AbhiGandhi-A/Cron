@@ -454,45 +454,18 @@ export async function getBatchUsersTempMailStats(
 }
 
 /**
- * Mark expired mailboxes in both Cloudflare D1 and MongoDB.
+ * Legacy cleanup hook kept as a no-op so active mailboxes remain valid until the
+ * user explicitly generates a new one or deletes the mailbox.
  */
 export async function cleanExpiredMailboxes(): Promise<{
   d1Modified: number;
   mongoModified: number;
   totalModified: number;
 }> {
-  let d1Modified = 0;
-  let mongoModified = 0;
-
-  // 1. Cloudflare D1 update
-  try {
-    const d1Res = await executeD1Mutation(
-      `UPDATE mailboxes SET status = 'expired' WHERE status = 'active' AND expires_at < datetime('now');`
-    );
-    if (d1Res.success) {
-      d1Modified = d1Res.changes;
-    }
-  } catch {
-    // D1 fallback
-  }
-
-  // 2. MongoDB update
-  try {
-    await connectDb();
-    const now = new Date();
-    const result = await TemporaryMailbox.updateMany(
-      { status: "active", expiresAt: { $lt: now } },
-      { $set: { status: "expired", deletedAt: new Date() } }
-    );
-    mongoModified = result.modifiedCount || 0;
-  } catch {
-    // Mongo fallback
-  }
-
   return {
-    d1Modified,
-    mongoModified,
-    totalModified: d1Modified + mongoModified,
+    d1Modified: 0,
+    mongoModified: 0,
+    totalModified: 0,
   };
 }
 
