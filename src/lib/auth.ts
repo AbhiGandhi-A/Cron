@@ -31,9 +31,14 @@ export const authOptions: NextAuthOptions = {
 
         await connectDb();
 
-        const user = await User.findOne({ email }).lean();
+        const user = await User.findOne({ email });
 
         if (!user) {
+          return null;
+        }
+
+        // Check if user is blocked
+        if (user.status === "blocked") {
           return null;
         }
 
@@ -42,6 +47,10 @@ export const authOptions: NextAuthOptions = {
         if (!isValid) {
           return null;
         }
+
+        // Update last login
+        user.lastLoginAt = new Date();
+        await user.save();
 
         return {
           id: user._id.toString(),

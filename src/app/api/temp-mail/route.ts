@@ -13,12 +13,27 @@ import {
   deleteMailbox,
   isProviderConfigured,
 } from "@/lib/temp-mail";
+import connectDb from "@/lib/mongodb";
+import { User } from "@/lib/models";
 
 export async function POST(req: Request) {
   try {
     const userId = await getUserIdFromSession();
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Check if temp mail is disabled for this user
+    await connectDb();
+    const user = await User.findById(userId).lean();
+    if (user?.tempMailDisabled) {
+      return NextResponse.json(
+        {
+          error: "Temp Mail disabled",
+          message: "Temporary Email feature has been disabled for your account by an administrator",
+        },
+        { status: 403 }
+      );
     }
 
     const limited = enforceRateLimit(`temp-mail:create:${getAuthenticatedIdentifier(userId)}`, 5, 60_000);

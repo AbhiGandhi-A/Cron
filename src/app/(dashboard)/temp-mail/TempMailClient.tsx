@@ -34,8 +34,6 @@ type Message = {
   size?: number;
 };
 
-const POLL_INTERVAL_MS = 12000;
-
 export default function TempMailClient() {
   const toast = useToast();
   const [loading, setLoading] = useState(true);
@@ -63,17 +61,13 @@ export default function TempMailClient() {
 
   const mailboxRef = useRef(mailbox);
   mailboxRef.current = mailbox;
-  const activePollRef = useRef(true);
-  const firstLoadDone = useRef(false);
+  const refreshKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
     void loadInitial();
     const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => {
-      clearInterval(timer);
-      activePollRef.current = false;
-    };
+    return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -111,13 +105,16 @@ export default function TempMailClient() {
       setError(e instanceof Error ? e.message : "Unable to load inbox");
     } finally {
       setLoading(false);
-      firstLoadDone.current = true;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const refreshMessages = useCallback(
     async (mb: Mailbox) => {
+      const refreshKey = `${mb.mailboxToken}:${mb.publicAddress}`;
+      if (refreshKeyRef.current === refreshKey) return;
+
+      refreshKeyRef.current = refreshKey;
       setMessagesLoading(true);
       try {
         const res = await fetch(
@@ -139,6 +136,9 @@ export default function TempMailClient() {
       } catch {
         /* silent refresh failure */
       } finally {
+        if (refreshKeyRef.current === refreshKey) {
+          refreshKeyRef.current = null;
+        }
         setMessagesLoading(false);
       }
     },
@@ -177,16 +177,6 @@ export default function TempMailClient() {
     }
   }, [refreshMessages]);
 
-  useEffect(() => {
-    if (!mailbox || mailbox.isExpired || usageProtection?.status === "blocked") return;
-    const interval = setInterval(() => {
-      if (!activePollRef.current) return;
-      if (document.visibilityState === "hidden") return;
-      void refreshMessages(mailboxRef.current!);
-    }, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [mailbox, mailbox?.isExpired, refreshMessages, usageProtection?.status]);
-
   const copyEmail = useCallback(async () => {
     if (!mailbox) return;
     try {
@@ -199,6 +189,9 @@ export default function TempMailClient() {
 
   const handleRefresh = useCallback(async () => {
     if (!mailbox || usageProtection?.status === "blocked") return;
+    const refreshKey = `${mailbox.mailboxToken}:${mailbox.publicAddress}`;
+    if (refreshKeyRef.current === refreshKey) return;
+
     setRefreshing(true);
     try {
       await refreshMessages(mailbox);
