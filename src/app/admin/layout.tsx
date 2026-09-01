@@ -24,6 +24,11 @@ export default function AdminLayout({ children }: LayoutProps) {
     try {
       const token = localStorage.getItem("adminAuthToken");
       if (!token) {
+        if (pathname === "/admin/login") {
+          setIsAuthenticated(false);
+          setLoading(false);
+          return;
+        }
         router.push("/admin/login");
         return;
       }
@@ -36,10 +41,20 @@ export default function AdminLayout({ children }: LayoutProps) {
         setIsAuthenticated(true);
       } else {
         localStorage.removeItem("adminAuthToken");
+        if (pathname === "/admin/login") {
+          setIsAuthenticated(false);
+          setLoading(false);
+          return;
+        }
         router.push("/admin/login");
       }
     } catch {
       localStorage.removeItem("adminAuthToken");
+      if (pathname === "/admin/login") {
+        setIsAuthenticated(false);
+        setLoading(false);
+        return;
+      }
       router.push("/admin/login");
     } finally {
       setLoading(false);
@@ -51,6 +66,8 @@ export default function AdminLayout({ children }: LayoutProps) {
     router.push("/admin/login");
   };
 
+  const isLoginPage = pathname === "/admin/login";
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center">
@@ -59,11 +76,13 @@ export default function AdminLayout({ children }: LayoutProps) {
     );
   }
 
+  if (isLoginPage) {
+    return children;
+  }
+
   if (!isAuthenticated) {
     return null;
   }
-
-  const isLoginPage = pathname === "/admin/login";
   if (isLoginPage) {
     return children;
   }
