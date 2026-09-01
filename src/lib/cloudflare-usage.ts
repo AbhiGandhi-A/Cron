@@ -337,6 +337,7 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
     }
   }
 
+  // Dynamic Plan Limits (configurable via env, defaulting to Cloudflare standard tier quotas)
   // Fetch Zone details to dynamically identify Cloudflare Plan
   let detectedPlanName = "Free";
   let zoneRef: CloudflareZoneRef | null = zoneId ? { id: zoneId, name: null } : null;
@@ -373,22 +374,27 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
 
   const workerRequestsLimit = safeNumber(
     process.env.CLOUDFLARE_WORKERS_REQUEST_LIMIT || process.env.CLOUDFLARE_WORKER_REQUEST_LIMIT,
+    100000 // Standard Cloudflare Free tier: 100,000 requests/day
     defaultWorkerRequestsLimit
   );
   const workerSubrequestsLimit = safeNumber(
     process.env.CLOUDFLARE_WORKERS_SUBREQUEST_LIMIT || process.env.CLOUDFLARE_WORKER_SUBREQUEST_LIMIT,
+    500000 // Standard Cloudflare Free tier: 500,000 subrequests/day
     defaultWorkerSubrequestsLimit
   );
   const d1StorageLimit = safeNumber(
     process.env.CLOUDFLARE_D1_STORAGE_LIMIT_BYTES || process.env.CLOUDFLARE_D1_STORAGE_LIMIT,
+    524288000 // Standard Cloudflare Free tier: 500 MB (524,288,000 bytes)
     defaultD1StorageLimit
   );
   const d1RowsReadLimit = safeNumber(
     process.env.CLOUDFLARE_D1_ROWS_READ_LIMIT,
+    5000000 // Standard Cloudflare Free tier: 5,000,000 rows read/day
     defaultD1RowsReadLimit
   );
   const d1RowsWrittenLimit = safeNumber(
     process.env.CLOUDFLARE_D1_ROWS_WRITTEN_LIMIT,
+    100000 // Standard Cloudflare Free tier: 100,000 rows written/day
     defaultD1RowsWrittenLimit
   );
 
@@ -628,8 +634,30 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
     );
   }
 
+  // 5. Query Zone Details & Analytics
+  let zoneRef: CloudflareZoneRef | null = zoneId ? { id: zoneId, name: null } : null;
   // 5. Query Zone Analytics (GraphQL)
   if (zoneId) {
+    const zoneInfoRes = await fetchJson<{
+      result?: {
+        id?: string;
+        name?: string;
+        status?: string;
+        plan?: { name?: string };
+      };
+    }>(`/zones/${encodeURIComponent(zoneId)}`, token);
+
+    if (zoneInfoRes.ok && zoneInfoRes.data?.result) {
+      const zRes = zoneInfoRes.data.result;
+      zoneRef = {
+        id: zRes.id || zoneId,
+        name: zRes.name || null,
+        status: zRes.status || null,
+        plan: zRes.plan?.name || null,
+      };
+    }
+
+    // Zone Analytics (GraphQL)
     const dateStart = startIso.split("T")[0];
     const dateEnd = endIso.split("T")[0];
 
