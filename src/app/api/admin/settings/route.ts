@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminAuth } from "@/lib/admin-auth";
 import {
   serializeCloudflareConfig,
-  getCloudflareConfigFromEnv,
+  getCloudflareRuntimeConfig,
   setCloudflareRuntimeConfig,
 } from "@/lib/cloudflare-config";
 
@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   const authError = requireAdminAuth(req);
   if (authError) return authError;
 
-  const envConfig = getCloudflareConfigFromEnv();
+  const config = await getCloudflareRuntimeConfig();
 
   return NextResponse.json({
     settings: {
@@ -29,12 +29,14 @@ export async function GET(req: NextRequest) {
     },
     environment: process.env.NODE_ENV,
     version: process.env.npm_package_version || "1.0.0",
-    accountId: envConfig.accountId,
-    zoneId: envConfig.zoneId,
-    apiTokenPresent: Boolean(envConfig.apiToken),
-    status: envConfig.status,
-    connectionMessage: envConfig.connectionMessage,
-    lastTested: envConfig.lastTested,
+    accountId: config.accountId,
+    zoneId: config.zoneId,
+    d1DatabaseId: config.d1DatabaseId,
+    workerName: config.workerName,
+    apiTokenPresent: Boolean(config.apiToken),
+    status: config.status,
+    connectionMessage: config.connectionMessage,
+    lastTested: config.lastTested,
   });
 }
 
@@ -46,15 +48,26 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const accountId = String(body.accountId ?? "").trim();
     const zoneId = String(body.zoneId ?? "").trim();
+    const d1DatabaseId = String(body.d1DatabaseId ?? "").trim();
+    const workerName = String(body.workerName ?? "").trim();
     const apiToken = String(body.apiToken ?? "").trim();
 
-    const nextConfig = setCloudflareRuntimeConfig({
+    // If no new API token provided, preserve existing one
+    let finalApiToken = apiToken;
+    if (!apiToken) {
+      const current = await getCloudflareRuntimeConfig();
+      finalApiToken = current.apiToken;
+    }
+
+    const nextConfig = await setCloudflareRuntimeConfig({
       accountId,
       zoneId,
-      apiToken,
-      status: accountId && apiToken ? "configuration-required" : "not-configured",
+      d1DatabaseId,
+      workerName,
+      apiToken: finalApiToken,
+      status: accountId && finalApiToken ? "configuration-required" : "not-configured",
       connectionMessage:
-        accountId && apiToken
+        accountId && finalApiToken
           ? "Cloudflare credentials configured. Test the connection to validate access."
           : "Cloudflare Configuration Required",
       lastTested: null,
@@ -66,6 +79,7 @@ export async function POST(req: NextRequest) {
       ...serializeCloudflareConfig(nextConfig),
     });
   } catch (error) {
+    console.error("[Admin Settings] Save failed:", error);
     return NextResponse.json(
       { error: "Failed to save Cloudflare configuration" },
       { status: 500 }

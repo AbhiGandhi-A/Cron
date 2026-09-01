@@ -115,6 +115,7 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
   const token = (process.env.CLOUDFLARE_API_TOKEN || process.env.CF_API_TOKEN || "").trim();
   const accountId = (process.env.CLOUDFLARE_ACCOUNT_ID || process.env.CF_ACCOUNT_ID || "").trim();
   const zoneId = (process.env.CLOUDFLARE_ZONE_ID || process.env.CF_ZONE_ID || "").trim();
+  const d1DatabaseId = (process.env.CLOUDFLARE_D1_DATABASE_ID || process.env.CF_D1_DATABASE_ID || "").trim();
   const lastUpdated = new Date().toISOString();
 
   if (!token || !accountId) {
@@ -146,8 +147,12 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
     };
   }
 
+  const resources: CloudflareMetric[] = [];
+
+  // Fetch Workers usage
   const start = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const end = new Date().toISOString();
+  
   const workerQuery = `query {
     viewer {
       accounts(filter: {accountTag: "${accountId}"}) {
@@ -166,7 +171,7 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
   const workersUsage = graphql?.data?.viewer?.accounts?.[0]?.workersInvocationsAdaptive?.sum?.requests;
   const workerLimit = safeNumber(process.env.CLOUDFLARE_WORKER_REQUESTS_DAILY_LIMIT, null);
 
-  const resources: CloudflareMetric[] = [
+  resources.push(
     buildMetric(
       "workers_requests",
       "Workers Requests",
@@ -174,8 +179,68 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
       workerLimit,
       "Daily",
       "requests"
-    ),
-  ];
+    )
+  );
+
+  // Fetch D1 Database usage if configured
+  if (d1DatabaseId) {
+    const d1Info = await fetchJson<{ result?: { size_bytes?: unknown; created_on?: string } }>(`/accounts/${encodeURIComponent(accountId)}/d1/database/${encodeURIComponent(d1DatabaseId)}`, token);
+    
+    if (d1Info?.result) {
+      const d1SizeBytes = safeNumber(d1Info.result.size_bytes, null);
+      const d1Limit = safeNumber(process.env.CLOUDFLARE_D1_STORAGE_LIMIT_MB, null);
+      let d1LimitBytes: number | null = null;
+      if (d1Limit !== null && d1Limit > 0) {
+        d1LimitBytes = d1Limit * 1024 * 1024; // Convert MB to bytes
+      }
+
+      resources.push(
+        buildMetric(
+          "d1_storage",
+          "D1 Database Storage",
+          d1SizeBytes,
+          d1LimitBytes,
+          "Plan Limit",
+          "bytes"
+        )
+      );
+    }
+  }
+
+  // Fetch Zone analytics if configured
+  if (zoneId) {
+    // Zone requests (requires Logpush or GraphQL analytics)
+    const zoneAnalyticsQuery = `query {
+      viewer {
+        zones(filter: {zoneTag: "${zoneId}"}) {
+          httpRequests1dGroups(limit: 1, filter: {date_geq: "${start.split('T')[0]}", date_leq: "${end.split('T')[0]}"}) {
+            sum { requests }
+          }
+        }
+      }
+    }`;
+
+    const zoneGraphql = await fetchJson<{ data?: { viewer?: { zones?: Array<{ httpRequests1dGroups?: Array<{ sum?: { requests?: unknown } }> }> } } }>(`/graphql`, token, {
+      method: "POST",
+      body: JSON.stringify({ query: zoneAnalyticsQuery }),
+    });
+
+    const zoneRequests = zoneGraphql?.data?.viewer?.zones?.[0]?.httpRequests1dGroups?.[0]?.sum?.requests;
+    
+    if (zoneRequests !== undefined && zoneRequests !== null) {
+      const zoneRequestLimit = safeNumber(process.env.CLOUDFLARE_ZONE_REQUESTS_DAILY_LIMIT, null);
+      resources.push(
+        buildMetric(
+          "zone_requests",
+          "Zone Requests",
+          safeNumber(zoneRequests, null),
+          zoneRequestLimit,
+          "Daily",
+          "requests"
+        )
+      );
+    }
+  }
 
   return {
     connected: true,

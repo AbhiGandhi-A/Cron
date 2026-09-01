@@ -6,6 +6,8 @@ import { Toast } from "@/components/admin/Toast";
 interface CloudflareSettingsSnapshot {
   accountId: string;
   zoneId: string;
+  d1DatabaseId: string;
+  workerName: string;
   apiTokenPresent: boolean;
   status: "connected" | "not-configured" | "configuration-required" | "connection-failed" | "zone-error";
   connectionMessage: string;
@@ -13,7 +15,7 @@ interface CloudflareSettingsSnapshot {
 }
 
 export default function SettingsPage() {
-  const [form, setForm] = useState({ accountId: "", zoneId: "", apiToken: "" });
+  const [form, setForm] = useState({ accountId: "", zoneId: "", d1DatabaseId: "", workerName: "", apiToken: "" });
   const [accountInfo, setAccountInfo] = useState<CloudflareSettingsSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -40,6 +42,8 @@ export default function SettingsPage() {
       setAccountInfo({
         accountId: data.accountId || "",
         zoneId: data.zoneId || "",
+        d1DatabaseId: data.d1DatabaseId || "",
+        workerName: data.workerName || "",
         apiTokenPresent: Boolean(data.apiTokenPresent),
         status: data.status || "not-configured",
         connectionMessage: data.connectionMessage || "Cloudflare Configuration Required",
@@ -48,6 +52,8 @@ export default function SettingsPage() {
       setForm({
         accountId: data.accountId || "",
         zoneId: data.zoneId || "",
+        d1DatabaseId: data.d1DatabaseId || "",
+        workerName: data.workerName || "",
         apiToken: "",
       });
     } catch (err) {
@@ -82,6 +88,8 @@ export default function SettingsPage() {
       setAccountInfo({
         accountId: data.accountId || "",
         zoneId: data.zoneId || "",
+        d1DatabaseId: data.d1DatabaseId || "",
+        workerName: data.workerName || "",
         apiTokenPresent: Boolean(data.apiTokenPresent),
         status: data.status || "not-configured",
         connectionMessage: data.connectionMessage || "Cloudflare Configuration Required",
@@ -126,6 +134,8 @@ export default function SettingsPage() {
       setAccountInfo({
         accountId: form.accountId,
         zoneId: form.zoneId,
+        d1DatabaseId: form.d1DatabaseId,
+        workerName: form.workerName,
         apiTokenPresent: Boolean(form.apiToken || data.apiTokenPresent),
         status: nextStatus,
         connectionMessage: data.message || "Cloudflare connection test completed.",
@@ -204,6 +214,26 @@ export default function SettingsPage() {
                 onChange={(e) => setForm({ ...form, zoneId: e.target.value })}
                 className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none transition focus:border-blue-300 focus:bg-white"
                 placeholder="Enter Cloudflare zone ID"
+              />
+            </label>
+
+            <label className="block text-sm font-medium text-slate-700">
+              D1 Database ID
+              <input
+                value={form.d1DatabaseId}
+                onChange={(e) => setForm({ ...form, d1DatabaseId: e.target.value })}
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none transition focus:border-blue-300 focus:bg-white"
+                placeholder="Enter Cloudflare D1 database ID (optional)"
+              />
+            </label>
+
+            <label className="block text-sm font-medium text-slate-700">
+              Worker Name
+              <input
+                value={form.workerName}
+                onChange={(e) => setForm({ ...form, workerName: e.target.value })}
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none transition focus:border-blue-300 focus:bg-white"
+                placeholder="Enter Cloudflare worker name (optional)"
               />
             </label>
           </div>
