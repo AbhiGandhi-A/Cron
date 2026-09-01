@@ -112,10 +112,14 @@ async function fetchJson<T>(path: string, token: string, init?: RequestInit): Pr
 }
 
 export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse> {
-  const token = (process.env.CLOUDFLARE_API_TOKEN || process.env.CF_API_TOKEN || "").trim();
-  const accountId = (process.env.CLOUDFLARE_ACCOUNT_ID || process.env.CF_ACCOUNT_ID || "").trim();
-  const zoneId = (process.env.CLOUDFLARE_ZONE_ID || process.env.CF_ZONE_ID || "").trim();
-  const d1DatabaseId = (process.env.CLOUDFLARE_D1_DATABASE_ID || process.env.CF_D1_DATABASE_ID || "").trim();
+  // Read config from database first, then fall back to environment
+  const { getCloudflareRuntimeConfig } = await import("@/lib/cloudflare-config");
+  const config = await getCloudflareRuntimeConfig();
+  
+  const token = config.apiToken.trim();
+  const accountId = config.accountId.trim();
+  const zoneId = config.zoneId.trim();
+  const d1DatabaseId = config.d1DatabaseId.trim();
   const lastUpdated = new Date().toISOString();
 
   if (!token || !accountId) {
