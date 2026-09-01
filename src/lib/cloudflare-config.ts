@@ -47,6 +47,7 @@ export interface SerializedCloudflareConfig {
   apiToken?: undefined;
   apiTokenPresent: boolean;
   apiTokenConfigured: boolean;
+  configured: boolean;
   tokenPreview: string;
   configStatus: CloudflareConfigStatus;
   status: CloudflareConnectionStatus;
@@ -164,6 +165,7 @@ export function serializeCloudflareConfig(
     apiToken: undefined,
     apiTokenPresent: Boolean(apiToken),
     apiTokenConfigured: Boolean(apiToken),
+    configured: Boolean(accountId && apiToken),
     tokenPreview: apiToken ? maskCloudflareSecret(apiToken) : "",
     configStatus,
     status,

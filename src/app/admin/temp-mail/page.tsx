@@ -299,6 +299,72 @@ export default function TempMailPage() {
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                         Active
                       </span>
+                {workerMetrics.map((metric) => {
+                  const hasLimit = metric.limit !== null && metric.limit > 0;
+                  const isBytes = metric.unit === "bytes";
+                  const currentFormatted = isBytes ? formatBytes(metric.current) : formatNumber(metric.current);
+                  const limitFormatted = isBytes ? formatBytes(metric.limit) : formatNumber(metric.limit);
+                  const remainingFormatted = isBytes ? formatBytes(metric.remaining) : formatNumber(metric.remaining);
+
+                  return (
+                    <div key={metric.id} className="p-4 rounded-xl bg-slate-50 border border-slate-200/90 space-y-3">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="font-bold text-slate-700">{metric.label}</span>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                            metric.status === "critical"
+                              ? "bg-red-50 text-red-700 border-red-200"
+                              : metric.status === "warning"
+                              ? "bg-amber-50 text-amber-700 border-amber-200"
+                              : metric.status === "healthy"
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              : "bg-slate-100 text-slate-600 border-slate-200"
+                          }`}
+                        >
+                          {metric.status.charAt(0).toUpperCase() + metric.status.slice(1)}
+                        </span>
+                      </div>
+
+                      <div>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-2xl font-extrabold text-slate-900 tracking-tight">
+                            {currentFormatted}
+                          </span>
+                          {hasLimit && (
+                            <span className="text-xs font-semibold text-slate-400">
+                              / {limitFormatted} {metric.unit && !isBytes ? metric.unit : ""}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[11px] text-slate-400 block mt-0.5">Reset: {metric.resetPeriod}</span>
+                      </div>
+
+                      {metric.percentage !== null && hasLimit ? (
+                        <div className="space-y-1.5 pt-1 border-t border-slate-200/60">
+                          <div className="h-2 w-full bg-slate-200/90 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                metric.status === "critical"
+                                  ? "bg-red-500"
+                                  : metric.status === "warning"
+                                  ? "bg-amber-500"
+                                  : "bg-blue-600"
+                              }`}
+                              style={{ width: `${Math.min(100, Math.max(metric.current ? 0.8 : 0, metric.percentage))}%` }}
+                            />
+                          </div>
+                          <div className="flex justify-between items-center text-[10px] text-slate-500">
+                            <span>
+                              {metric.remaining !== null ? `${remainingFormatted} remaining` : `Reset: ${metric.resetPeriod}`}
+                            </span>
+                            <span className="font-bold text-slate-700">{metric.percentage.toFixed(2)}% used</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-slate-400 pt-1 border-t border-slate-200/60">
+                          Quota: Standard Cloudflare Allowance
+                        </div>
+                      )}
                     </div>
                     <div className="text-2xl font-extrabold text-slate-900">
                       {metric.current !== null ? formatNumber(metric.current) : "Unavailable"}
@@ -306,6 +372,8 @@ export default function TempMailPage() {
                     <p className="text-[11px] text-slate-400">Reset: {metric.resetPeriod}</p>
                   </div>
                 ))}
+                  );
+                })}
               </div>
             )}
           </section>

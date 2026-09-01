@@ -337,6 +337,28 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
     }
   }
 
+  // Dynamic Plan Limits (configurable via env, defaulting to Cloudflare standard tier quotas)
+  const workerRequestsLimit = safeNumber(
+    process.env.CLOUDFLARE_WORKERS_REQUEST_LIMIT || process.env.CLOUDFLARE_WORKER_REQUEST_LIMIT,
+    100000 // Standard Cloudflare Free tier: 100,000 requests/day
+  );
+  const workerSubrequestsLimit = safeNumber(
+    process.env.CLOUDFLARE_WORKERS_SUBREQUEST_LIMIT || process.env.CLOUDFLARE_WORKER_SUBREQUEST_LIMIT,
+    500000 // Standard Cloudflare Free tier: 500,000 subrequests/day
+  );
+  const d1StorageLimit = safeNumber(
+    process.env.CLOUDFLARE_D1_STORAGE_LIMIT_BYTES || process.env.CLOUDFLARE_D1_STORAGE_LIMIT,
+    524288000 // Standard Cloudflare Free tier: 500 MB (524,288,000 bytes)
+  );
+  const d1RowsReadLimit = safeNumber(
+    process.env.CLOUDFLARE_D1_ROWS_READ_LIMIT,
+    5000000 // Standard Cloudflare Free tier: 5,000,000 rows read/day
+  );
+  const d1RowsWrittenLimit = safeNumber(
+    process.env.CLOUDFLARE_D1_ROWS_WRITTEN_LIMIT,
+    100000 // Standard Cloudflare Free tier: 100,000 rows written/day
+  );
+
   // Worker Requests Metric
   resources.push(
     buildMetric({
@@ -346,6 +368,7 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
       category: "workers",
       usage: totalWorkerRequests,
       limit: null, // Cloudflare GraphQL analytics does not expose static plan quotas dynamically; strictly marked Unavailable
+      limit: workerRequestsLimit,
       resetPeriod: "Last 24 Hours",
       unit: "requests",
       source: "Cloudflare GraphQL: workersInvocationsAdaptive.sum.requests",
@@ -387,6 +410,7 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
         category: "workers",
         usage: totalWorkerSubrequests,
         limit: null,
+        limit: workerSubrequestsLimit,
         resetPeriod: "Last 24 Hours",
         unit: "subrequests",
         source: "Cloudflare GraphQL: workersInvocationsAdaptive.sum.subrequests",
@@ -447,6 +471,7 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
           category: "d1",
           usage: d1SizeBytes,
           limit: null, // Plan limit is not returned dynamically by D1 REST API; marked Unavailable
+          limit: d1StorageLimit,
           resetPeriod: "Total Size",
           unit: "bytes",
           source: "Cloudflare D1 REST: /accounts/{id}/d1/database/{id} file_size",
@@ -463,6 +488,7 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
           category: "d1",
           usage: null,
           limit: null,
+          limit: d1StorageLimit,
           resetPeriod: "Total Size",
           unit: "bytes",
           source: "Cloudflare D1 REST: /accounts/{id}/d1/database/{id}",
@@ -549,6 +575,7 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
         category: "d1",
         usage: d1RowsRead,
         limit: null,
+        limit: d1RowsReadLimit,
         resetPeriod: "Last 24 Hours",
         unit: "rows",
         source: "Cloudflare GraphQL: d1AnalyticsAdaptiveGroups.sum.rowsRead",
@@ -565,6 +592,7 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
         category: "d1",
         usage: d1RowsWritten,
         limit: null,
+        limit: d1RowsWrittenLimit,
         resetPeriod: "Last 24 Hours",
         unit: "rows",
         source: "Cloudflare GraphQL: d1AnalyticsAdaptiveGroups.sum.rowsWritten",

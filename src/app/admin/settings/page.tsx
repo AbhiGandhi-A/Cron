@@ -305,12 +305,14 @@ export default function SettingsPage() {
               </div>
               <span
                 className={`px-3 py-1 rounded-full text-xs font-semibold border ${
-                  data.cloudflare.configured
+                  data.cloudflare.accountId && (data.cloudflare.apiTokenPresent || data.cloudflare.configured)
                     ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                     : "bg-amber-50 text-amber-700 border-amber-200"
                 }`}
               >
-                {data.cloudflare.configured ? "● Configured in ENV" : "● Incomplete ENV"}
+                {data.cloudflare.accountId && (data.cloudflare.apiTokenPresent || data.cloudflare.configured)
+                  ? "● Configured in ENV"
+                  : "● Incomplete ENV"}
               </span>
             </div>
 
