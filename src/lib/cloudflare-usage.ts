@@ -337,7 +337,6 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
     }
   }
 
-  // Dynamic Plan Limits (configurable via env, defaulting to Cloudflare standard tier quotas)
   // Fetch Zone details to dynamically identify Cloudflare Plan
   let detectedPlanName = "Free";
   let zoneRef: CloudflareZoneRef | null = zoneId ? { id: zoneId, name: null } : null;
