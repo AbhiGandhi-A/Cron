@@ -121,7 +121,6 @@ export default function TempMailClient() {
           { cache: "no-store" }
         );
         if (res.status === 404) {
-          setMailbox(null);
           setMessages([]);
           return;
         }
