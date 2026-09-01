@@ -1,6 +1,17 @@
 export type CloudflareMetricStatus = "healthy" | "warning" | "critical" | "unavailable";
 
+export interface CloudflareAccountRef {
+  id: string;
+  name: string | null;
+}
+
+export interface CloudflareZoneRef {
+  id: string;
+  name: string | null;
+}
+
 export interface CloudflareMetric {
+  id: string;
   name: string;
   label: string;
   current: number | null;
@@ -13,8 +24,11 @@ export interface CloudflareMetric {
 }
 
 export interface CloudflareUsageResponse {
+  connected: boolean;
   available: boolean;
   configured: boolean;
+  account: CloudflareAccountRef | null;
+  zone: CloudflareZoneRef | null;
   lastUpdated: string;
   message?: string;
   resources: CloudflareMetric[];
@@ -29,34 +43,46 @@ function safeNumber(value: unknown, fallback: number | null = null): number | nu
   return fallback;
 }
 
+function computeDerivedMetrics(usage: number | null, limit: number | null) {
+  if (usage === null || limit === null || limit <= 0) {
+    return { remaining: null, percentage: null };
+  }
+
+  const remaining = limit >= usage ? Math.max(limit - usage, 0) : null;
+  const percentage = (usage / limit) * 100;
+
+  return {
+    remaining,
+    percentage,
+  };
+}
+
 function buildMetric(
+  id: string,
   name: string,
-  label: string,
-  currentValue: unknown,
-  limitValue: unknown,
+  usage: number | null,
+  limit: number | null,
   reset: string,
   unit?: string
 ): CloudflareMetric {
-  const current = safeNumber(currentValue, null);
-  const limit = safeNumber(limitValue, null);
-  const remaining = current !== null && limit !== null && limit >= current ? Math.max(limit - current, 0) : null;
-  const percentage = current !== null && limit !== null && limit > 0 ? (current / limit) * 100 : null;
+  const { remaining, percentage } = computeDerivedMetrics(usage, limit);
 
   let status: CloudflareMetricStatus = "unavailable";
-  if (current === null || limit === null || percentage === null) {
-    status = "unavailable";
-  } else if (percentage >= 95) {
-    status = "critical";
-  } else if (percentage >= 90) {
-    status = "warning";
-  } else {
-    status = "healthy";
+  if (usage !== null && limit !== null && percentage !== null) {
+    if (percentage >= 95) {
+      status = "critical";
+    } else if (percentage >= 90) {
+      status = "warning";
+    } else {
+      status = "healthy";
+    }
   }
 
   return {
+    id,
     name,
-    label,
-    current,
+    label: name,
+    current: usage,
     limit,
     remaining,
     percentage,
@@ -66,112 +92,108 @@ function buildMetric(
   };
 }
 
+async function fetchJson<T>(path: string, token: string, init?: RequestInit): Promise<T | null> {
+  try {
+    const response = await fetch(`${"https://api.cloudflare.com/client/v4"}${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        ...(init?.headers ?? {}),
+      },
+      cache: "no-store",
+    });
+
+    if (!response.ok) return null;
+    return (await response.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
 export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse> {
-  const token = process.env.CLOUDFLARE_API_TOKEN || process.env.CF_API_TOKEN || "";
-  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID || process.env.CF_ACCOUNT_ID || "";
+  const token = (process.env.CLOUDFLARE_API_TOKEN || process.env.CF_API_TOKEN || "").trim();
+  const accountId = (process.env.CLOUDFLARE_ACCOUNT_ID || process.env.CF_ACCOUNT_ID || "").trim();
+  const zoneId = (process.env.CLOUDFLARE_ZONE_ID || process.env.CF_ZONE_ID || "").trim();
+  const lastUpdated = new Date().toISOString();
 
   if (!token || !accountId) {
     return {
+      connected: false,
       available: false,
       configured: false,
-      lastUpdated: new Date().toISOString(),
-      message: "Cloudflare API not configured",
+      account: null,
+      zone: zoneId ? { id: zoneId, name: null } : null,
+      lastUpdated,
+      message: "Cloudflare Configuration Required",
       resources: [],
     };
   }
 
-  const baseUrl = "https://api.cloudflare.com/client/v4";
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
-  };
-  const now = new Date();
-  const start = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
-  const end = now.toISOString();
+  const accountInfo = await fetchJson<{ result?: { id?: string; name?: string } }>(`/accounts/${encodeURIComponent(accountId)}`, token);
+  const zoneInfo = zoneId ? await fetchJson<{ result?: { id?: string; name?: string } }>(`/zones/${encodeURIComponent(zoneId)}`, token) : null;
 
-  const defaults = {
-    workersRequests: safeNumber(process.env.CLOUDFLARE_WORKER_REQUESTS_DAILY_LIMIT, 100000) ?? 100000,
-    d1Read: safeNumber(process.env.CLOUDFLARE_D1_ROWS_READ_DAILY_LIMIT, 5000000) ?? 5000000,
-    d1Write: safeNumber(process.env.CLOUDFLARE_D1_ROWS_WRITTEN_DAILY_LIMIT, 100000) ?? 100000,
-    d1Storage: safeNumber(process.env.CLOUDFLARE_D1_STORAGE_LIMIT, null),
-    kvRead: safeNumber(process.env.CLOUDFLARE_KV_READ_LIMIT, null),
-    kvWrite: safeNumber(process.env.CLOUDFLARE_KV_WRITE_LIMIT, null),
-    doRequests: safeNumber(process.env.CLOUDFLARE_DO_REQUESTS_LIMIT, null),
-    queues: safeNumber(process.env.CLOUDFLARE_QUEUES_LIMIT, null),
-  };
+  if (!accountInfo?.result?.id) {
+    return {
+      connected: false,
+      available: false,
+      configured: true,
+      account: { id: accountId, name: null },
+      zone: zoneId ? { id: zoneId, name: null } : null,
+      lastUpdated,
+      message: "Cloudflare Authentication Failed",
+      resources: [],
+    };
+  }
 
-  const metrics: CloudflareMetric[] = [];
-
-  try {
-    const workerQuery = `query { viewer { accounts(filter: {accountTag: "${accountId}"}) { workersInvocationsAdaptive(limit: 10000, filter: {datetime_geq: "${start}", datetime_leq: "${end}"}) { sum { requests } } } } }`;
-    const workerResponse = await fetch(`${baseUrl}/graphql`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ query: workerQuery }),
-      cache: "no-store",
-    });
-
-    let workerCurrent: number | null = null;
-    if (workerResponse.ok) {
-      const workerJson = await workerResponse.json();
-      const workerData = workerJson?.data?.viewer?.accounts?.[0]?.workersInvocationsAdaptive?.sum;
-      workerCurrent = safeNumber(workerData?.requests, null);
+  const start = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const end = new Date().toISOString();
+  const workerQuery = `query {
+    viewer {
+      accounts(filter: {accountTag: "${accountId}"}) {
+        workersInvocationsAdaptive(limit: 10000, filter: {datetime_geq: "${start}", datetime_leq: "${end}"}) {
+          sum { requests }
+        }
+      }
     }
+  }`;
 
-    metrics.push(
-      buildMetric(
-        "workers_requests",
-        "Workers Requests",
-        workerCurrent,
-        defaults.workersRequests,
-        "Daily",
-        "/day"
-      )
-    );
-  } catch {
-    metrics.push(
-      buildMetric("workers_requests", "Workers Requests", null, defaults.workersRequests, "Daily", "/day")
-    );
-  }
-
-  const unavailableDefaults: Array<[string, string, number | null, string, string]> = [
-    ["cpu_time", "CPU Time", defaults.workersRequests, "Daily", "/day"],
-    ["d1_rows_read", "D1 Rows Read", defaults.d1Read, "Daily", "/day"],
-    ["d1_rows_written", "D1 Rows Written", defaults.d1Write, "Daily", "/day"],
-    ["d1_storage", "D1 Storage", defaults.d1Storage ?? null, "Daily", "B"],
-    ["kv_read_requests", "KV Read Requests", defaults.kvRead ?? null, "Daily", "/day"],
-    ["kv_write_requests", "KV Write/Delete/List Requests", defaults.kvWrite ?? null, "Daily", "/day"],
-    ["kv_stored_data", "KV Stored Data", defaults.kvRead ?? null, "Daily", "B"],
-    ["durable_objects_requests", "Durable Objects Requests", defaults.doRequests ?? null, "Daily", "/day"],
-    ["durable_objects_duration", "Durable Objects Duration", defaults.doRequests ?? null, "Daily", "ms"],
-    ["durable_objects_sql_rows_read", "Durable Objects SQL Rows Read", defaults.doRequests ?? null, "Daily", "/day"],
-    ["durable_objects_sql_rows_written", "Durable Objects SQL Rows Written", defaults.doRequests ?? null, "Daily", "/day"],
-    ["durable_objects_stored_data", "Durable Objects Stored Data", defaults.doRequests ?? null, "Daily", "B"],
-    ["queues_operations", "Queues Operations", defaults.queues ?? null, "Daily", "/day"],
-    ["workers_ai_neurons", "Workers AI Neurons", null, "Daily", "neurons"],
-    ["vectorize_queried_dimensions", "Vectorize Queried Dimensions", null, "Daily", "dims"],
-    ["vectorize_stored_dimensions", "Vectorize Stored Dimensions", null, "Daily", "dims"],
-    ["workers_logs_events", "Workers Logs Events", null, "Daily", "/day"],
-    ["workers_build_minutes", "Workers Builds Minutes", null, "Daily", "min"],
-    ["containers_cpu", "Containers CPU", null, "Daily", "%"],
-    ["containers_memory", "Containers Memory", null, "Daily", "MB"],
-    ["containers_disk", "Containers Disk", null, "Daily", "GB"],
-    ["containers_network_egress", "Containers Network Egress", null, "Daily", "GB"],
-  ];
-
-  for (const [name, label, limit, reset, unit] of unavailableDefaults) {
-    metrics.push(buildMetric(name, label, null, limit ?? null, reset, unit));
-  }
-
-  const normalized = metrics.filter((metric, idx, arr) => {
-    const first = arr.findIndex((m) => m.name === metric.name);
-    return first === idx;
+  const graphql = await fetchJson<{ data?: { viewer?: { accounts?: Array<{ workersInvocationsAdaptive?: { sum?: { requests?: unknown } } }> } } }>(`/graphql`, token, {
+    method: "POST",
+    body: JSON.stringify({ query: workerQuery }),
   });
 
+  const workersUsage = graphql?.data?.viewer?.accounts?.[0]?.workersInvocationsAdaptive?.sum?.requests;
+  const workerLimit = safeNumber(process.env.CLOUDFLARE_WORKER_REQUESTS_DAILY_LIMIT, null);
+
+  const resources: CloudflareMetric[] = [
+    buildMetric(
+      "workers_requests",
+      "Workers Requests",
+      safeNumber(workersUsage, null),
+      workerLimit,
+      "Daily",
+      "requests"
+    ),
+  ];
+
   return {
-    available: normalized.length > 0,
+    connected: true,
+    available: true,
     configured: true,
-    lastUpdated: new Date().toISOString(),
-    resources: normalized,
+    account: {
+      id: accountId,
+      name: accountInfo.result?.name ?? null,
+    },
+    zone: zoneId
+      ? {
+          id: zoneId,
+          name: zoneInfo?.result?.name ?? null,
+        }
+      : null,
+    lastUpdated,
+    message: "Cloudflare usage loaded successfully.",
+    resources,
   };
 }
+

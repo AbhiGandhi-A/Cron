@@ -39,7 +39,9 @@ function formatNumber(value: unknown): string {
 }
 
 function formatBytes(value: unknown): string {
-  const bytes = Math.max(0, safeNumber(value));
+  const bytesValue = safeNumber(value, null);
+  if (bytesValue === null || !Number.isFinite(bytesValue)) return "Unavailable";
+  const bytes = Math.max(0, bytesValue);
   if (bytes === 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
   let size = bytes;
