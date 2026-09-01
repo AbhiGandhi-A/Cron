@@ -24,7 +24,7 @@ interface TempMailStats {
   };
 }
 
-function safeNumber(value: unknown, fallback = 0): number {
+function safeNumber(value: unknown, fallback: number | null = 0): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim() !== "") {
     const parsed = Number(value);

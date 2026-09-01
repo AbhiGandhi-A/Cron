@@ -134,30 +134,30 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
     );
   }
 
-  const unavailableDefaults = [
+  const unavailableDefaults: Array<[string, string, number | null, string, string]> = [
     ["cpu_time", "CPU Time", defaults.workersRequests, "Daily", "/day"],
-    ["d1_rows_read", "D1 Rows Read", null, defaults.d1Read, "Daily", "/day"],
-    ["d1_rows_written", "D1 Rows Written", null, defaults.d1Write, "Daily", "/day"],
-    ["d1_storage", "D1 Storage", null, defaults.d1Storage, "Daily", "B"],
-    ["kv_read_requests", "KV Read Requests", null, defaults.kvRead, "Daily", "/day"],
-    ["kv_write_requests", "KV Write/Delete/List Requests", null, defaults.kvWrite, "Daily", "/day"],
-    ["kv_stored_data", "KV Stored Data", null, defaults.kvRead, "Daily", "B"],
-    ["durable_objects_requests", "Durable Objects Requests", null, defaults.doRequests, "Daily", "/day"],
-    ["durable_objects_duration", "Durable Objects Duration", null, defaults.doRequests, "Daily", "ms"],
-    ["durable_objects_sql_rows_read", "Durable Objects SQL Rows Read", null, defaults.doRequests, "Daily", "/day"],
-    ["durable_objects_sql_rows_written", "Durable Objects SQL Rows Written", null, defaults.doRequests, "Daily", "/day"],
-    ["durable_objects_stored_data", "Durable Objects Stored Data", null, defaults.doRequests, "Daily", "B"],
-    ["queues_operations", "Queues Operations", null, defaults.queues, "Daily", "/day"],
-    ["workers_ai_neurons", "Workers AI Neurons", null, null, "Daily", "neurons"],
-    ["vectorize_queried_dimensions", "Vectorize Queried Dimensions", null, null, "Daily", "dims"],
-    ["vectorize_stored_dimensions", "Vectorize Stored Dimensions", null, null, "Daily", "dims"],
-    ["workers_logs_events", "Workers Logs Events", null, null, "Daily", "/day"],
-    ["workers_build_minutes", "Workers Builds Minutes", null, null, "Daily", "min"],
-    ["containers_cpu", "Containers CPU", null, null, "Daily", "%"],
-    ["containers_memory", "Containers Memory", null, null, "Daily", "MB"],
-    ["containers_disk", "Containers Disk", null, null, "Daily", "GB"],
-    ["containers_network_egress", "Containers Network Egress", null, null, "Daily", "GB"],
-  ] as const;
+    ["d1_rows_read", "D1 Rows Read", defaults.d1Read, "Daily", "/day"],
+    ["d1_rows_written", "D1 Rows Written", defaults.d1Write, "Daily", "/day"],
+    ["d1_storage", "D1 Storage", defaults.d1Storage ?? null, "Daily", "B"],
+    ["kv_read_requests", "KV Read Requests", defaults.kvRead ?? null, "Daily", "/day"],
+    ["kv_write_requests", "KV Write/Delete/List Requests", defaults.kvWrite ?? null, "Daily", "/day"],
+    ["kv_stored_data", "KV Stored Data", defaults.kvRead ?? null, "Daily", "B"],
+    ["durable_objects_requests", "Durable Objects Requests", defaults.doRequests ?? null, "Daily", "/day"],
+    ["durable_objects_duration", "Durable Objects Duration", defaults.doRequests ?? null, "Daily", "ms"],
+    ["durable_objects_sql_rows_read", "Durable Objects SQL Rows Read", defaults.doRequests ?? null, "Daily", "/day"],
+    ["durable_objects_sql_rows_written", "Durable Objects SQL Rows Written", defaults.doRequests ?? null, "Daily", "/day"],
+    ["durable_objects_stored_data", "Durable Objects Stored Data", defaults.doRequests ?? null, "Daily", "B"],
+    ["queues_operations", "Queues Operations", defaults.queues ?? null, "Daily", "/day"],
+    ["workers_ai_neurons", "Workers AI Neurons", null, "Daily", "neurons"],
+    ["vectorize_queried_dimensions", "Vectorize Queried Dimensions", null, "Daily", "dims"],
+    ["vectorize_stored_dimensions", "Vectorize Stored Dimensions", null, "Daily", "dims"],
+    ["workers_logs_events", "Workers Logs Events", null, "Daily", "/day"],
+    ["workers_build_minutes", "Workers Builds Minutes", null, "Daily", "min"],
+    ["containers_cpu", "Containers CPU", null, "Daily", "%"],
+    ["containers_memory", "Containers Memory", null, "Daily", "MB"],
+    ["containers_disk", "Containers Disk", null, "Daily", "GB"],
+    ["containers_network_egress", "Containers Network Egress", null, "Daily", "GB"],
+  ];
 
   for (const [name, label, limit, reset, unit] of unavailableDefaults) {
     metrics.push(buildMetric(name, label, null, limit ?? null, reset, unit));
