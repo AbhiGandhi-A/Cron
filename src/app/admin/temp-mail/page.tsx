@@ -1,8 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Toast } from "@/components/admin/Toast";
 import Link from "next/link";
+import {
+  MailIcon,
+  RefreshIcon,
+  BroomIcon,
+  TrashIcon,
+  UsersIcon,
+  CheckCircleIcon,
+} from "@/components/admin/AdminIcons";
 
 interface CloudflareMetric {
   id: string;
@@ -17,6 +25,19 @@ interface CloudflareMetric {
   resetPeriod: string;
   unit?: string;
   source?: string;
+}
+
+export interface ActiveMailboxItem {
+  id: string;
+  publicAddress: string;
+  ownerId: string;
+  ownerName?: string;
+  ownerEmail?: string;
+  status: "active" | "expired" | "deleted";
+  createdAt: string;
+  expiresAt: string;
+  messageCount: number;
+  source: "cloudflare_d1" | "mongodb";
 }
 
 interface TempMailStats {
@@ -35,6 +56,7 @@ interface TempMailStats {
     totalBytes: number;
     averageEmailSize: number;
   };
+  activeMailboxes?: ActiveMailboxItem[];
   cloudflare?: {
     connected?: boolean;
     resources?: CloudflareMetric[];
@@ -75,7 +97,12 @@ export default function TempMailPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [deletingAddress, setDeletingAddress] = useState<string | null>(null);
+  const [copiedAddress, setCopiedAddress] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
+
+  const activeMailboxTableRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     fetchStats();
@@ -139,6 +166,85 @@ export default function TempMailPage() {
     }
   };
 
+  const handleDeleteMailbox = async (publicAddress: string) => {
+    if (!confirm(`Are you sure you want to permanently delete the active mailbox:\n${publicAddress}\n\nThis will remove the mailbox and all its stored emails.`)) {
+      return;
+    }
+
+    try {
+      setDeletingAddress(publicAddress);
+      const token = localStorage.getItem("adminAuthToken");
+      if (!token) return;
+
+      const res = await fetch("/api/admin/temp-mail", {
+        method: "POST",
+        headers: {
+          Authorization: token,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ action: "delete-mailbox", publicAddress }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to delete mailbox");
+      }
+
+      const data = await res.json();
+      setToast({ message: data.message || `Mailbox ${publicAddress} deleted`, type: "success" });
+
+      // Optimistically update local active mailboxes list and counts
+      setStats((prev) => {
+        if (!prev) return prev;
+        const filtered = (prev.activeMailboxes || []).filter(
+          (m) => m.publicAddress.toLowerCase() !== publicAddress.toLowerCase()
+        );
+        return {
+          ...prev,
+          mailboxes: {
+            ...prev.mailboxes,
+            active: Math.max(0, prev.mailboxes.active - 1),
+            deleted: prev.mailboxes.deleted + 1,
+          },
+          activeMailboxes: filtered,
+        };
+      });
+    } catch (err) {
+      setToast({
+        message: err instanceof Error ? err.message : "Failed to delete mailbox",
+        type: "error",
+      });
+    } finally {
+      setDeletingAddress(null);
+    }
+  };
+
+  const handleCopy = (address: string) => {
+    navigator.clipboard.writeText(address);
+    setCopiedAddress(address);
+    setToast({ message: `Copied ${address} to clipboard`, type: "success" });
+    setTimeout(() => setCopiedAddress(null), 2000);
+  };
+
+  const scrollToActiveMailboxes = () => {
+    if (activeMailboxTableRef.current) {
+      activeMailboxTableRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+
+  const filteredActiveMailboxes = useMemo(() => {
+    const list = stats?.activeMailboxes || [];
+    if (!searchQuery.trim()) return list;
+    const q = searchQuery.toLowerCase().trim();
+    return list.filter(
+      (m) =>
+        m.publicAddress.toLowerCase().includes(q) ||
+        (m.ownerEmail && m.ownerEmail.toLowerCase().includes(q)) ||
+        (m.ownerName && m.ownerName.toLowerCase().includes(q)) ||
+        m.ownerId.toLowerCase().includes(q)
+    );
+  }, [stats?.activeMailboxes, searchQuery]);
+
   const workerMetrics = stats?.cloudflare?.resources?.filter((r) => r.category === "workers") || [];
 
   return (
@@ -149,13 +255,13 @@ export default function TempMailPage() {
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold uppercase tracking-wider text-blue-600">Temp Mail</span>
             <span className="text-slate-300">•</span>
-            <span className="text-xs text-slate-500">Service Analytics</span>
+            <span className="text-xs text-slate-500">Service Analytics & Mailbox Management</span>
           </div>
           <h1 className="mt-1 text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
             Temporary Mail Control
           </h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Monitor disposable mailbox lifecycle, inbound messages, and Cloudflare Worker traffic
+            Monitor disposable mailbox lifecycle, active email list, and Cloudflare Worker traffic
           </p>
         </div>
 
@@ -165,7 +271,7 @@ export default function TempMailPage() {
             disabled={refreshing}
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs transition disabled:opacity-60 cursor-pointer"
           >
-            <span className={refreshing ? "animate-spin" : ""}>🔄</span>
+            <RefreshIcon className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
             {refreshing ? "Refreshing..." : "Refresh"}
           </button>
           <button
@@ -173,7 +279,7 @@ export default function TempMailPage() {
             disabled={actionLoading || loading}
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-xs transition disabled:opacity-60 cursor-pointer"
           >
-            <span>🧹</span>
+            <BroomIcon className="w-3.5 h-3.5" />
             {actionLoading ? "Processing..." : "Prune Expired Mailboxes"}
           </button>
         </div>
@@ -190,7 +296,7 @@ export default function TempMailPage() {
         </div>
       ) : (
         <div className="space-y-6">
-          {/* Section 1: Mailboxes Overview */}
+          {/* Section 1: Mailboxes Overview Cards */}
           <section className="space-y-3">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500">Mailbox Lifecycle</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
@@ -201,13 +307,24 @@ export default function TempMailPage() {
                 </span>
                 <span className="text-[11px] text-slate-400 mt-1 block">All created mailboxes</span>
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
-                <span className="text-xs font-bold text-slate-500 block">Active Mailboxes</span>
+
+              {/* Clickable Active Mailboxes Card */}
+              <div
+                onClick={scrollToActiveMailboxes}
+                className="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4 shadow-xs hover:border-emerald-300 hover:bg-emerald-50/70 hover:shadow-sm transition-all cursor-pointer group"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-emerald-800">Active Mailboxes</span>
+                  <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-100/80 px-2 py-0.5 rounded-full group-hover:bg-emerald-200 transition">
+                    View List ↓
+                  </span>
+                </div>
                 <span className="text-2xl font-extrabold text-emerald-700 mt-1 block">
                   {formatNumber(stats.mailboxes.active)}
                 </span>
-                <span className="text-[11px] text-slate-400 mt-1 block">Currently accessible</span>
+                <span className="text-[11px] text-emerald-600 mt-1 block">Currently accessible (Click to view)</span>
               </div>
+
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
                 <span className="text-xs font-bold text-slate-500 block">Expired Mailboxes</span>
                 <span className="text-2xl font-extrabold text-amber-700 mt-1 block">
@@ -215,6 +332,7 @@ export default function TempMailPage() {
                 </span>
                 <span className="text-[11px] text-slate-400 mt-1 block">Past expiration time</span>
               </div>
+
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
                 <span className="text-xs font-bold text-slate-500 block">Deleted Mailboxes</span>
                 <span className="text-2xl font-extrabold text-slate-600 mt-1 block">
@@ -222,6 +340,7 @@ export default function TempMailPage() {
                 </span>
                 <span className="text-[11px] text-slate-400 mt-1 block">Replaced by new generation</span>
               </div>
+
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
                 <span className="text-xs font-bold text-slate-500 block">Created Today</span>
                 <span className="text-2xl font-extrabold text-blue-700 mt-1 block">
@@ -232,7 +351,156 @@ export default function TempMailPage() {
             </div>
           </section>
 
-          {/* Section 2: Emails & Storage */}
+          {/* Section 2: Active Temporary Mailboxes List with Delete Action */}
+          <section ref={activeMailboxTableRef} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-slate-900 text-base">Active Temporary Mailboxes</h3>
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
+                    {filteredActiveMailboxes.length} {filteredActiveMailboxes.length === 1 ? "Mailbox" : "Mailboxes"}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Live temporary email addresses currently active and receiving inbound emails
+                </p>
+              </div>
+
+              {/* Search input */}
+              <div className="w-full sm:w-72">
+                <input
+                  type="text"
+                  placeholder="Search address or user..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full text-xs px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition"
+                />
+              </div>
+            </div>
+
+            {filteredActiveMailboxes.length === 0 ? (
+              <div className="py-12 text-center text-slate-500 space-y-2">
+                <div className="w-12 h-12 mx-auto rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+                  <MailIcon className="w-6 h-6" />
+                </div>
+                <p className="text-sm font-semibold text-slate-700">No active mailboxes found</p>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  {searchQuery ? "No active mailboxes match your search filter." : "There are currently no active temporary mailboxes."}
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-slate-500 uppercase tracking-wider text-[10px] font-semibold bg-slate-50/60">
+                      <th className="py-3 px-4 rounded-l-xl">Temporary Address</th>
+                      <th className="py-3 px-4">Account / Owner</th>
+                      <th className="py-3 px-4">Messages</th>
+                      <th className="py-3 px-4">Created</th>
+                      <th className="py-3 px-4">Storage Source</th>
+                      <th className="py-3 px-4">Status</th>
+                      <th className="py-3 px-4 text-right rounded-r-xl">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-slate-700">
+                    {filteredActiveMailboxes.map((mb) => {
+                      const isDeleting = deletingAddress === mb.publicAddress;
+                      const isCopied = copiedAddress === mb.publicAddress;
+
+                      return (
+                        <tr key={mb.id || mb.publicAddress} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-3.5 px-4 font-mono font-medium text-slate-900">
+                            <div className="flex items-center gap-2">
+                              <span>{mb.publicAddress}</span>
+                              <button
+                                onClick={() => handleCopy(mb.publicAddress)}
+                                title="Copy email address"
+                                className="text-slate-400 hover:text-blue-600 transition cursor-pointer p-1 rounded-md hover:bg-slate-100"
+                              >
+                                {isCopied ? (
+                                  <CheckCircleIcon className="w-3.5 h-3.5 text-emerald-600" />
+                                ) : (
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
+                                  </svg>
+                                )}
+                              </button>
+                            </div>
+                          </td>
+
+                          <td className="py-3.5 px-4">
+                            {mb.ownerEmail ? (
+                              <Link
+                                href={`/admin/users?search=${encodeURIComponent(mb.ownerEmail)}`}
+                                className="text-blue-600 hover:text-blue-700 font-semibold hover:underline flex items-center gap-1.5"
+                              >
+                                <UsersIcon className="w-3.5 h-3.5 text-slate-400" />
+                                <span>{mb.ownerEmail}</span>
+                              </Link>
+                            ) : mb.ownerName ? (
+                              <span className="font-semibold text-slate-800">{mb.ownerName}</span>
+                            ) : (
+                              <span className="text-slate-400 font-mono text-[11px] truncate block max-w-[140px]" title={mb.ownerId}>
+                                {mb.ownerId || "Anonymous / Unlinked"}
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-3.5 px-4">
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 font-semibold text-[11px]">
+                              <MailIcon className="w-3 h-3 text-slate-400" />
+                              {mb.messageCount} {mb.messageCount === 1 ? "msg" : "msgs"}
+                            </span>
+                          </td>
+
+                          <td className="py-3.5 px-4 text-slate-500 whitespace-nowrap">
+                            {mb.createdAt ? new Date(mb.createdAt).toLocaleDateString(undefined, {
+                              month: "short",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            }) : "—"}
+                          </td>
+
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                              mb.source === "cloudflare_d1"
+                                ? "bg-orange-50 text-orange-700 border-orange-200"
+                                : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            }`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${mb.source === "cloudflare_d1" ? "bg-orange-500" : "bg-emerald-500"}`} />
+                              {mb.source === "cloudflare_d1" ? "Cloudflare D1" : "MongoDB"}
+                            </span>
+                          </td>
+
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                              Active
+                            </span>
+                          </td>
+
+                          <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                            <button
+                              onClick={() => handleDeleteMailbox(mb.publicAddress)}
+                              disabled={isDeleting}
+                              title={`Delete mailbox ${mb.publicAddress}`}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 hover:border-red-300 text-xs font-semibold transition disabled:opacity-50 cursor-pointer"
+                            >
+                              <TrashIcon className={`w-3.5 h-3.5 ${isDeleting ? "animate-spin" : ""}`} />
+                              <span>{isDeleting ? "Deleting..." : "Delete"}</span>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          {/* Section 3: Emails & Storage */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
               <h3 className="font-bold text-slate-900 border-b border-slate-100 pb-3">Email Messages</h3>
@@ -271,7 +539,7 @@ export default function TempMailPage() {
             </div>
           </div>
 
-          {/* Section 3: Cloudflare Worker Invocations */}
+          {/* Section 4: Cloudflare Worker Invocations */}
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
               <div>

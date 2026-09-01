@@ -1,5 +1,6 @@
+import mongoose from "mongoose";
 import connectDb from "@/lib/mongodb";
-import { TemporaryMailbox, TemporaryEmail } from "@/lib/models";
+import { TemporaryMailbox, TemporaryEmail, User } from "@/lib/models";
 import { getCloudflareConfigFromEnv } from "@/lib/cloudflare-config";
 
 export interface TempMailAggregateStats {
@@ -430,4 +431,191 @@ export async function cleanExpiredMailboxes(): Promise<{
     mongoModified,
     totalModified: d1Modified + mongoModified,
   };
+}
+
+export interface ActiveMailboxItem {
+  id: string;
+  publicAddress: string;
+  ownerId: string;
+  ownerName?: string;
+  ownerEmail?: string;
+  status: "active" | "expired" | "deleted";
+  createdAt: string;
+  expiresAt: string;
+  messageCount: number;
+  source: "cloudflare_d1" | "mongodb";
+}
+
+/**
+ * Fetch all active temporary mailboxes with owner and message statistics.
+ */
+export async function getRealtimeActiveMailboxes(): Promise<ActiveMailboxItem[]> {
+  const mailboxesMap = new Map<string, ActiveMailboxItem>();
+  const ownerIds = new Set<string>();
+
+  // 1. Fetch active mailboxes from Cloudflare D1
+  try {
+    const d1Sql = `
+      SELECT id, owner_id, public_address, status, created_at, expires_at
+      FROM mailboxes
+      WHERE status = 'active'
+      ORDER BY created_at DESC
+      LIMIT 200;
+    `;
+    const d1Mailboxes = await queryD1<{
+      id: string;
+      owner_id: string;
+      public_address: string;
+      status: string;
+      created_at: string;
+      expires_at: string;
+    }>(d1Sql);
+
+    const d1EmailCounts = await queryD1<{ mailbox_id: string; count: number }>(
+      `SELECT mailbox_id, COUNT(*) as count FROM emails GROUP BY mailbox_id;`
+    );
+    const d1CountMap = new Map<string, number>();
+    for (const c of d1EmailCounts) {
+      if (c.mailbox_id) d1CountMap.set(c.mailbox_id, safeNumber(c.count));
+    }
+
+    for (const mb of d1Mailboxes) {
+      if (!mb.public_address) continue;
+      const addr = mb.public_address.toLowerCase().trim();
+      if (mb.owner_id) ownerIds.add(mb.owner_id);
+
+      mailboxesMap.set(addr, {
+        id: mb.id || addr,
+        publicAddress: addr,
+        ownerId: mb.owner_id || "",
+        status: "active",
+        createdAt: mb.created_at || new Date().toISOString(),
+        expiresAt: mb.expires_at || new Date().toISOString(),
+        messageCount: d1CountMap.get(mb.id) || 0,
+        source: "cloudflare_d1",
+      });
+    }
+  } catch {
+    // D1 fallback
+  }
+
+  // 2. Fetch active mailboxes from MongoDB
+  try {
+    await connectDb();
+    const mongoMailboxes = await TemporaryMailbox.find({ status: "active" })
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .lean();
+
+    if (mongoMailboxes.length > 0) {
+      const mbIds = mongoMailboxes.map((m) => m._id);
+      const emailCounts = await TemporaryEmail.aggregate([
+        { $match: { mailboxId: { $in: mbIds } } },
+        { $group: { _id: "$mailboxId", count: { $sum: 1 } } },
+      ]);
+      const mongoCountMap = new Map<string, number>();
+      for (const c of emailCounts) {
+        if (c._id) mongoCountMap.set(c._id.toString(), safeNumber(c.count));
+      }
+
+      for (const mb of mongoMailboxes) {
+        const addr = mb.publicAddress.toLowerCase().trim();
+        if (mb.ownerId) ownerIds.add(mb.ownerId);
+
+        // If not already from D1 or to supplement
+        if (!mailboxesMap.has(addr)) {
+          mailboxesMap.set(addr, {
+            id: mb._id.toString(),
+            publicAddress: addr,
+            ownerId: mb.ownerId || "",
+            status: "active",
+            createdAt: mb.createdAt ? new Date(mb.createdAt).toISOString() : new Date().toISOString(),
+            expiresAt: mb.expiresAt ? new Date(mb.expiresAt).toISOString() : new Date().toISOString(),
+            messageCount: mongoCountMap.get(mb._id.toString()) || 0,
+            source: "mongodb",
+          });
+        }
+      }
+    }
+  } catch {
+    // Mongo fallback
+  }
+
+  // 3. Enrich owner email and name from User collection
+  try {
+    await connectDb();
+    const validOwnerIds = Array.from(ownerIds).filter((id) => mongoose.Types.ObjectId.isValid(id));
+    if (validOwnerIds.length > 0) {
+      const users = await User.find({ _id: { $in: validOwnerIds } })
+        .select("name email")
+        .lean();
+      const userMap = new Map<string, { name?: string; email: string }>();
+      for (const u of users) {
+        userMap.set(u._id.toString(), { name: u.name, email: u.email });
+      }
+
+      for (const mb of mailboxesMap.values()) {
+        const userInfo = userMap.get(mb.ownerId);
+        if (userInfo) {
+          mb.ownerEmail = userInfo.email;
+          mb.ownerName = userInfo.name;
+        }
+      }
+    }
+  } catch {
+    // User enrich fallback
+  }
+
+  return Array.from(mailboxesMap.values()).sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+}
+
+/**
+ * Permanently delete / deactivate an active temporary mailbox across Cloudflare D1 and MongoDB.
+ */
+export async function adminDeleteMailbox(identifier: string): Promise<boolean> {
+  let d1Deleted = false;
+  let mongoDeleted = false;
+  const cleanIdentifier = identifier.trim().toLowerCase();
+
+  // 1. D1 Delete
+  try {
+    const now = new Date().toISOString();
+    await queryD1(
+      `UPDATE mailboxes SET status = 'deleted', expires_at = ?1 WHERE public_address = ?2 OR id = ?2;`,
+      [now, cleanIdentifier]
+    );
+    await queryD1(
+      `DELETE FROM emails WHERE mailbox_id IN (SELECT id FROM mailboxes WHERE public_address = ?1 OR id = ?1);`,
+      [cleanIdentifier]
+    );
+    d1Deleted = true;
+  } catch {
+    // D1 fallback
+  }
+
+  // 2. Mongo Delete
+  try {
+    await connectDb();
+    const isObjId = mongoose.Types.ObjectId.isValid(cleanIdentifier);
+    const query = isObjId
+      ? { $or: [{ _id: cleanIdentifier }, { publicAddress: cleanIdentifier }] }
+      : { publicAddress: cleanIdentifier };
+
+    const mailboxes = await TemporaryMailbox.find(query).lean();
+    if (mailboxes.length > 0) {
+      const ids = mailboxes.map((m) => m._id);
+      await TemporaryMailbox.updateMany(
+        { _id: { $in: ids } },
+        { $set: { status: "deleted", deletedAt: new Date() } }
+      );
+      await TemporaryEmail.deleteMany({ mailboxId: { $in: ids } });
+      mongoDeleted = true;
+    }
+  } catch {
+    // Mongo fallback
+  }
+
+  return d1Deleted || mongoDeleted;
 }

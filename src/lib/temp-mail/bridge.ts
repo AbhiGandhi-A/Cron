@@ -77,76 +77,58 @@ async function readJson<T = unknown>(res: Response): Promise<T> {
 // ---------------------------------------------------------------------------
 
 export async function createMailbox(ownerId: string) {
-  if (isUsingCloudflare()) {
-    try {
-      const res = await workerFetch("/api/temp-mail", {
-        method: "POST",
-        body: JSON.stringify({ ownerId }),
-      });
+  if (!isUsingCloudflare()) return service.createMailbox(ownerId);
 
-      if (res.ok) {
-        const data = await readJson<{ mailbox?: { publicAddress: string; mailboxToken: string; expiresAt: string } }>(res);
-        if (data.mailbox) {
-          return {
-            publicAddress: data.mailbox.publicAddress,
-            mailboxToken: data.mailbox.mailboxToken,
-            expiresAt: new Date(data.mailbox.expiresAt),
-          };
-        }
-      }
-    } catch {
-      // Fall back to Mongo service
-    }
+  const res = await workerFetch("/api/temp-mail", {
+    method: "POST",
+    body: JSON.stringify({ ownerId }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`temp-mail worker create failed: ${res.status}`);
   }
 
-  return service.createMailbox(ownerId);
+  const data = await readJson<{ mailbox?: { publicAddress: string; mailboxToken: string; expiresAt: string } }>(res);
+  if (!data.mailbox) throw new Error("temp-mail worker returned no mailbox");
+
+  return {
+    publicAddress: data.mailbox.publicAddress,
+    mailboxToken: data.mailbox.mailboxToken,
+    expiresAt: new Date(data.mailbox.expiresAt),
+  };
 }
 
 export async function getActiveMailbox(ownerId: string) {
-  if (isUsingCloudflare()) {
-    try {
-      const res = await workerFetch(`/api/temp-mail?ownerId=${encodeURIComponent(ownerId)}`);
-      if (res.ok) {
-        const data = await readJson<{ mailbox: { publicAddress: string; mailboxToken: string; expiresAt: string } | null }>(res);
-        if (data.mailbox) {
-          return {
-            publicAddress: data.mailbox.publicAddress,
-            mailboxToken: data.mailbox.mailboxToken,
-            expiresAt: new Date(data.mailbox.expiresAt),
-            isExpired: false,
-          };
-        }
-      }
-    } catch {
-      // Fall back to Mongo service
-    }
-  }
+  if (!isUsingCloudflare()) return service.getActiveMailbox(ownerId);
 
-  return service.getActiveMailbox(ownerId);
+  const res = await workerFetch(`/api/temp-mail?ownerId=${encodeURIComponent(ownerId)}`);
+  if (!res.ok) throw new Error(`temp-mail worker get failed: ${res.status}`);
+
+  const data = await readJson<{ mailbox: { publicAddress: string; mailboxToken: string; expiresAt: string } | null }>(res);
+  if (!data.mailbox) return null;
+
+  return {
+    publicAddress: data.mailbox.publicAddress,
+    mailboxToken: data.mailbox.mailboxToken,
+    expiresAt: new Date(data.mailbox.expiresAt),
+    isExpired: false,
+  };
 }
 
 export async function deleteMailbox(ownerId: string): Promise<boolean> {
-  let cfDeleted = false;
-  if (isUsingCloudflare()) {
-    try {
-      const active = await getActiveMailbox(ownerId);
-      if (active) {
-        const res = await workerFetch("/api/temp-mail", {
-          method: "DELETE",
-          body: JSON.stringify({ ownerId, publicAddress: active.publicAddress }),
-        });
-        if (res.ok) {
-          const data = await readJson<{ deleted: boolean }>(res);
-          cfDeleted = Boolean(data.deleted);
-        }
-      }
-    } catch {
-      // Fall back to Mongo service
-    }
-  }
+  if (!isUsingCloudflare()) return service.deleteMailbox(ownerId);
 
-  const mongoDeleted = await service.deleteMailbox(ownerId);
-  return cfDeleted || mongoDeleted;
+  const active = await getActiveMailbox(ownerId);
+  if (!active) return false;
+
+  const res = await workerFetch("/api/temp-mail", {
+    method: "DELETE",
+    body: JSON.stringify({ ownerId, publicAddress: active.publicAddress }),
+  });
+  if (!res.ok) throw new Error(`temp-mail worker delete failed: ${res.status}`);
+
+  const data = await readJson<{ deleted: boolean }>(res);
+  return Boolean(data.deleted);
 }
 
 // ---------------------------------------------------------------------------

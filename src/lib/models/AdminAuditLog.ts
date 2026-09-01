@@ -12,7 +12,8 @@ export type AdminAction =
   | "temp_mail_disabled_global"
   | "temp_mail_enabled_global"
   | "usage_protection_triggered"
-  | "mailbox_cleaned";
+  | "mailbox_cleaned"
+  | "mailbox_deleted";
 
 export interface IAdminAuditLog extends Document {
   _id: mongoose.Types.ObjectId;

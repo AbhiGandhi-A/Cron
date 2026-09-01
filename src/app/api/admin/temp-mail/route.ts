@@ -4,7 +4,12 @@ import connectDb from "@/lib/mongodb";
 import { AdminAuditLog } from "@/lib/models";
 import { logError } from "@/lib/security";
 import { getCloudflareUsageData } from "@/lib/cloudflare-usage";
-import { getRealtimeTempMailStats, cleanExpiredMailboxes } from "@/lib/temp-mail/admin-stats";
+import {
+  getRealtimeTempMailStats,
+  getRealtimeActiveMailboxes,
+  adminDeleteMailbox,
+  cleanExpiredMailboxes,
+} from "@/lib/temp-mail/admin-stats";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -14,8 +19,9 @@ export async function GET(req: NextRequest) {
   if (authError) return authError;
 
   try {
-    const [tempMailStats, cloudflareUsage] = await Promise.all([
+    const [tempMailStats, activeMailboxes, cloudflareUsage] = await Promise.all([
       getRealtimeTempMailStats(),
+      getRealtimeActiveMailboxes(),
       getCloudflareUsageData().catch(() => null),
     ]);
 
@@ -23,6 +29,7 @@ export async function GET(req: NextRequest) {
       mailboxes: tempMailStats.mailboxes,
       emails: tempMailStats.emails,
       storage: tempMailStats.storage,
+      activeMailboxes,
       cloudflare: cloudflareUsage,
       source: tempMailStats.source,
     });
@@ -43,13 +50,48 @@ export async function POST(req: NextRequest) {
     await connectDb();
 
     const body = await req.json().catch(() => ({}));
-    const { action } = body as { action?: string };
+    const { action, publicAddress, mailboxId } = body as {
+      action?: string;
+      publicAddress?: string;
+      mailboxId?: string;
+    };
 
     if (!action) {
       return NextResponse.json(
         { error: "Action required" },
         { status: 400 }
       );
+    }
+
+    if (action === "delete-mailbox") {
+      const identifier = (publicAddress || mailboxId || "").trim();
+      if (!identifier) {
+        return NextResponse.json(
+          { error: "publicAddress or mailboxId is required" },
+          { status: 400 }
+        );
+      }
+
+      const deleted = await adminDeleteMailbox(identifier);
+
+      await AdminAuditLog.create({
+        action: "mailbox_deleted",
+        adminIp: getClientIp(req),
+        targetUserId: null,
+        targetUserEmail: null,
+        details: {
+          publicAddress: identifier,
+          success: deleted,
+        },
+        success: deleted,
+      }).catch(() => {});
+
+      return NextResponse.json({
+        success: deleted,
+        message: deleted
+          ? `Mailbox ${identifier} and its messages have been deleted.`
+          : `Mailbox ${identifier} not found or already deleted.`,
+      });
     }
 
     if (action === "clean-expired") {

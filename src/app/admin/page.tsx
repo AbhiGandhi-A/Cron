@@ -742,6 +742,18 @@ export default function AdminDashboard() {
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <Link
+              href="/admin/temp-mail"
+              className="p-3 bg-slate-50 hover:bg-emerald-50/60 rounded-xl border border-transparent hover:border-emerald-200 transition group block cursor-pointer"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-500 group-hover:text-emerald-800 font-medium">Active Mailboxes</span>
+                <span className="text-[10px] text-emerald-600 font-semibold opacity-0 group-hover:opacity-100 transition">View →</span>
+              </div>
+              <span className="text-xl font-bold text-slate-900 group-hover:text-emerald-700 mt-0.5 block">
+                {formatNumber(stats.tempMail.mailboxes)}
+              </span>
+            </Link>
             <div className="p-3 bg-slate-50 rounded-xl">
               <span className="text-xs text-slate-500 block">Active Mailboxes</span>
               <span className="text-xl font-bold text-slate-900">{formatNumber(stats.tempMail.mailboxes)}</span>
