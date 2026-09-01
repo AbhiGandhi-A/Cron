@@ -45,6 +45,27 @@ export async function POST(req: NextRequest) {
   };
 
   try {
+    // 0. Verify token validity with Cloudflare
+    let tokenValid = false;
+    let tokenStatusMessage = "";
+    try {
+      const verifyRes = await fetch(`${baseUrl}/user/tokens/verify`, {
+        method: "GET",
+        headers,
+        cache: "no-store",
+        signal: AbortSignal.timeout(8000),
+      });
+      if (verifyRes.ok) {
+        tokenValid = true;
+      } else {
+        const verifyData = await verifyRes.json().catch(() => null);
+        const errDesc = verifyData?.errors?.[0]?.message || `HTTP ${verifyRes.status}`;
+        tokenStatusMessage = `Token verification failed (${errDesc})`;
+      }
+    } catch {
+      // Continue to account test
+    }
+
     // 1. Test Account access
     const accountStart = Date.now();
     const accountRes = await fetch(`${baseUrl}/accounts/${encodeURIComponent(accountId)}`, {
@@ -59,7 +80,9 @@ export async function POST(req: NextRequest) {
     if (accountRes.status === 401 || accountRes.status === 403) {
       accountCheck = {
         status: "UNAUTHORIZED",
-        message: "Invalid API token or insufficient permissions.",
+        message: tokenValid
+          ? "Token is valid, but lacks 'Account: Account Settings: Read' (or 'Account: Read') permission in Cloudflare."
+          : (tokenStatusMessage || "Invalid API token or insufficient permissions."),
         responseTimeMs: accountElapsed,
       };
     } else if (accountRes.status === 404) {
@@ -84,17 +107,6 @@ export async function POST(req: NextRequest) {
       };
     }
 
-    if (accountCheck.status !== "CONNECTED") {
-      return NextResponse.json({
-        connected: false,
-        status: accountCheck.status,
-        message: accountCheck.message,
-        lastTested: now,
-        checks: {
-          account: accountCheck,
-        },
-      });
-    }
 
     // 2. Test Zone access (if configured)
     let zoneCheck: ResourceCheckResult | undefined;
