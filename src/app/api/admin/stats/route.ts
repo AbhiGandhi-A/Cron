@@ -28,10 +28,7 @@ export async function GET(req: NextRequest) {
       status: "active",
     });
 
-    // Get expired mailboxes
-    const expiredMailboxes = await TemporaryMailbox.countDocuments({
-      status: "expired",
-    });
+    const expiredMailboxes = 0;
 
     // Get total emails
     const totalEmails = await TemporaryEmail.countDocuments();

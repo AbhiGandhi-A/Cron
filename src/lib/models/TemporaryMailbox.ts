@@ -28,8 +28,6 @@ const TemporaryMailboxSchema = new Schema<ITemporaryMailbox>(
   { timestamps: true }
 );
 
-TemporaryMailboxSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-
 export const TemporaryMailbox: Model<ITemporaryMailbox> =
   mongoose.models.TemporaryMailbox ||
   mongoose.model<ITemporaryMailbox>("TemporaryMailbox", TemporaryMailboxSchema);

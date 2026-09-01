@@ -96,14 +96,14 @@ function makeKnownMailbox(ownerId: string, token: string, address: string, overr
 
 // ---------------- token / identifier tests ----------------
 
-test("generateMailboxId produces unpredictable 12-char ids", () => {
+test("generateMailboxId produces unpredictable 8-char ids", () => {
   const ids = new Set<string>();
   for (let i = 0; i < 1000; i++) {
     ids.add(generateMailboxId());
   }
   assert.equal(ids.size, 1000, "mailbox ids must be unique and non-deterministic");
   for (const id of ids) {
-    assert.match(id, /^[a-z0-9]{12}$/);
+    assert.match(id, /^[a-z0-9]{8}$/);
     assert.doesNotMatch(id, /^[0-9]{24}$/, "must not resemble a Mongo ObjectId");
   }
 });
@@ -213,6 +213,34 @@ test("service rejects creation when provider unavailable (no-op provider)", asyn
   }
 });
 
+test("active mailboxes ignore timestamp expiry and keep only newest 6 emails", async (t) => {
+  if (setupError) return t.skip("mongodb-memory-server unavailable: " + setupError.message);
+
+  const ownerId = userId();
+  const token = generateMailboxToken();
+  const address = `retention-${Math.random().toString(36).slice(2)}@temp.cronjobs.site`;
+  const mailbox = await makeKnownMailbox(ownerId, token, address, {
+    expiresAt: new Date(Date.now() - 60 * 60 * 1000),
+  });
+
+  for (let i = 0; i < 8; i++) {
+    const ok = await storeInboundEmail(
+      makeEmail(address, {
+        messageId: `retention-${i}`,
+        receivedAt: new Date(Date.now() + i * 60_000),
+      })
+    );
+    assert.equal(ok, true, "all emails should be accepted while mailbox remains active");
+  }
+
+  const ownership = await verifyMailboxOwnership(ownerId, token, address);
+  assert.equal(ownership.valid, true, "active mailbox should not expire based on timestamp");
+
+  const remaining = await TemporaryEmail.find({ mailboxId: mailbox._id }).sort({ receivedAt: 1 }).lean();
+  assert.equal(remaining.length, 6, "only newest 6 emails should remain");
+  assert.equal(remaining[0].messageId, "retention-2", "oldest retained message should be the 3rd insertion");
+});
+
 // ---------------- ownership / cross-user isolation ----------------
 
 test("verifyMailboxOwnership enforces owner isolation", async (t) => {
@@ -235,7 +263,7 @@ test("verifyMailboxOwnership enforces owner isolation", async (t) => {
   await TemporaryMailbox.deleteOne({ _id: mb._id });
 });
 
-test("verifyMailboxOwnership rejects expired mailboxes", async (t) => {
+test("verifyMailboxOwnership keeps active mailboxes valid even when expiresAt is stale", async (t) => {
   if (setupError) return t.skip("mongodb-memory-server unavailable: " + setupError.message);
   const owner = userId();
   const knownToken = "expired-token";
@@ -247,7 +275,7 @@ test("verifyMailboxOwnership rejects expired mailboxes", async (t) => {
     expiresAt: new Date(Date.now() - 1000),
   });
   const result = await verifyMailboxOwnership(owner, knownToken, mb.publicAddress);
-  assert.equal(result.valid, false, "expired mailbox must be rejected");
+  assert.equal(result.valid, true, "active mailbox must remain valid regardless of stale expiresAt metadata");
   await TemporaryMailbox.deleteOne({ _id: mb._id });
 });
 

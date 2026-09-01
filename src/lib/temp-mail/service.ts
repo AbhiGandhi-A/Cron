@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import connectDb from "@/lib/mongodb";
 import { TemporaryMailbox, TemporaryEmail } from "@/lib/models";
 import type { ITemporaryMailbox } from "@/lib/models";
@@ -21,12 +22,9 @@ export interface CreateMailboxResult {
 export async function createMailbox(ownerId: string): Promise<CreateMailboxResult> {
   await connectDb();
 
-  await expireStaleMailboxes(ownerId);
-
   const existing = await TemporaryMailbox.findOne({
     ownerId,
     status: "active",
-    expiresAt: { $gt: new Date() },
   }).lean();
 
   if (existing) {
@@ -49,8 +47,7 @@ export async function createMailbox(ownerId: string): Promise<CreateMailboxResul
   const publicAddress = `${mailboxId}@${domain}`;
   const mailboxToken = generateMailboxToken();
   const mailboxTokenHash = hashMailboxToken(mailboxToken);
-  const expirationMinutes = getExpirationMinutes();
-  const expiresAt = new Date(Date.now() + expirationMinutes * 60 * 1000);
+  const expiresAt = new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000);
 
   let providerMailboxId: string | null = null;
 
@@ -94,17 +91,6 @@ export async function getActiveMailbox(ownerId: string): Promise<{
 
   if (!mailbox) return null;
 
-  const isExpired = new Date() >= new Date(mailbox.expiresAt);
-
-  if (isExpired) {
-    return {
-      publicAddress: mailbox.publicAddress,
-      mailboxToken: "",
-      expiresAt: mailbox.expiresAt,
-      isExpired: true,
-    };
-  }
-
   const mailboxToken = generateMailboxToken();
   const mailboxTokenHash = hashMailboxToken(mailboxToken);
   await TemporaryMailbox.updateOne(
@@ -118,6 +104,16 @@ export async function getActiveMailbox(ownerId: string): Promise<{
     expiresAt: mailbox.expiresAt,
     isExpired: false,
   };
+}
+
+async function pruneMailboxMessages(mailboxId: mongoose.Types.ObjectId | string): Promise<void> {
+  const messages = await TemporaryEmail.find({ mailboxId }).sort({ receivedAt: -1, _id: -1 }).select("_id").lean();
+  if (messages.length <= 6) return;
+
+  const idsToDelete = messages.slice(6).map((message) => message._id);
+  if (idsToDelete.length === 0) return;
+
+  await TemporaryEmail.deleteMany({ _id: { $in: idsToDelete } });
 }
 
 export async function deleteMailbox(ownerId: string): Promise<boolean> {
@@ -164,8 +160,6 @@ export async function verifyMailboxOwnership(
 
   if (mailbox.ownerId !== ownerId) return { valid: false };
 
-  if (new Date() >= new Date(mailbox.expiresAt)) return { valid: false };
-
   const tokenHash = hashMailboxToken(mailboxToken);
   if (tokenHash !== mailbox.mailboxTokenHash) return { valid: false };
 
@@ -181,7 +175,6 @@ export async function storeInboundEmail(email: InboundEmail): Promise<boolean> {
   });
 
   if (!mailbox) return false;
-  if (new Date() >= new Date(mailbox.expiresAt)) return false;
 
   const existing = await TemporaryEmail.findOne({
     mailboxId: mailbox._id,
@@ -216,6 +209,8 @@ export async function storeInboundEmail(email: InboundEmail): Promise<boolean> {
     attachments,
     size,
   });
+
+  await pruneMailboxMessages(mailbox._id);
 
   return true;
 }

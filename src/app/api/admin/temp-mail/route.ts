@@ -19,9 +19,7 @@ export async function GET(req: NextRequest) {
     const activeMailboxes = await TemporaryMailbox.countDocuments({
       status: "active",
     });
-    const expiredMailboxes = await TemporaryMailbox.countDocuments({
-      status: "expired",
-    });
+    const expiredMailboxes = 0;
     const deletedMailboxes = await TemporaryMailbox.countDocuments({
       status: "deleted",
     });

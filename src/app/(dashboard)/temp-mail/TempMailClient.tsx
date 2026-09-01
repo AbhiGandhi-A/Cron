@@ -56,7 +56,6 @@ export default function TempMailClient() {
   const [generateConfirm, setGenerateConfirm] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
-  const [now, setNow] = useState(Date.now());
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
 
   const mailboxRef = useRef(mailbox);
@@ -65,9 +64,9 @@ export default function TempMailClient() {
 
   useEffect(() => {
     setMounted(true);
-    void loadInitial();
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
+    setMailbox(null);
+    setMessages([]);
+    setError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -273,11 +272,6 @@ export default function TempMailClient() {
 
   if (!mounted) return null;
 
-  const isExpired = mailbox ? now >= new Date(mailbox.expiresAt).getTime() : false;
-  const shownExpiry = mailbox ? new Date(mailbox.expiresAt).getTime() - now : 0;
-  const mm = Math.floor(Math.max(0, shownExpiry) / 60000);
-  const ss = Math.floor((Math.max(0, shownExpiry) % 60000) / 1000);
-
   return (
     <DashboardLayout>
       <div className="max-w-4xl mx-auto">
@@ -328,7 +322,7 @@ export default function TempMailClient() {
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-base font-bold text-gray-900">Your temporary email</h2>
-              {mailbox && !mailbox.isExpired && isExpired === false && (
+              {mailbox && !mailbox.isExpired && (
                 <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 font-semibold">
                   Active
                 </span>
@@ -346,7 +340,7 @@ export default function TempMailClient() {
               </div>
             )}
 
-            {mailbox && isExpired === false && (
+            {mailbox && !mailbox.isExpired && (
               <>
                 <div className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl p-3 mb-4">
                   <span className="flex-1 font-mono text-sm text-gray-800 break-all">
@@ -364,8 +358,8 @@ export default function TempMailClient() {
                 </div>
 
                 <div className="flex items-center justify-between mb-4">
-                  <span className={`text-sm font-medium ${shownExpiry < 300000 ? "text-red-600" : "text-gray-600"}`}>
-                    Expires in {String(mm).padStart(2, "0")}:{String(ss).padStart(2, "0")}
+                  <span className="text-sm font-medium text-gray-600">
+                    This address stays active until you generate a new one.
                   </span>
                   <span className="text-xs text-gray-400">
                     {lastRefreshed ? `Last refreshed ${lastRefreshed.toLocaleTimeString()}` : ""}
@@ -405,7 +399,7 @@ export default function TempMailClient() {
               </>
             )}
 
-            {mailbox && isExpired === true && (
+            {mailbox && mailbox.isExpired && (
               <div className="text-center py-6">
                 <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center">
                   <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
@@ -425,7 +419,7 @@ export default function TempMailClient() {
           </div>
         )}
 
-        {mailbox && !mailbox.isExpired && isExpired === false && usageProtection?.status !== "blocked" && (
+        {mailbox && !mailbox.isExpired && usageProtection?.status !== "blocked" && (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
               <h2 className="text-base font-bold text-gray-900">Inbox</h2>

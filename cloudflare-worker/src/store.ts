@@ -30,14 +30,13 @@ export class TempMailStore {
     expiresAt: string;
     createdAt: string;
   }> {
-    const minutes = getExpirationMinutes(this.env);
     const domain = getDomain(this.env);
     const id = existing?.id || uuid();
     const address = existing?.publicAddress || `${generateMailboxId()}@${domain}`;
     const token = generateMailboxToken();
     const tokenHash = await this.helpers.hashToken(token);
     const createdAt = nowIso();
-    const expiresAt = new Date(Date.now() + minutes * 60_000).toISOString();
+    const expiresAt = new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000).toISOString();
 
     await this.db
       .prepare(
@@ -62,10 +61,10 @@ export class TempMailStore {
       .prepare(
         `SELECT id, public_address, expires_at, created_at
          FROM mailboxes
-         WHERE owner_id = ?1 AND status = '${ACTIVE}' AND expires_at > ?2
+         WHERE owner_id = ?1 AND status = '${ACTIVE}'
          ORDER BY created_at DESC LIMIT 1`,
       )
-      .bind(ownerId, now)
+      .bind(ownerId)
       .first<{ id: string; public_address: string; expires_at: string; created_at: string }>();
     if (!row) return null;
     return {
@@ -112,10 +111,6 @@ export class TempMailStore {
       }>();
     if (!row) return null;
     if (row.status !== ACTIVE) return null;
-    if (new Date(row.expires_at).getTime() <= Date.now()) {
-      await this.expireMailboxById(row.id);
-      return null;
-    }
     if (ownerId !== undefined && row.owner_id !== ownerId) return null;
     const presentedHash = await this.helpers.hashToken(token);
     const ok = await this.helpers.timingSafeEqual(presentedHash, row.token_hash);
@@ -133,9 +128,9 @@ export class TempMailStore {
     const row = await this.db
       .prepare(
         `SELECT id, public_address FROM mailboxes
-         WHERE public_address = ?1 AND status = 'active' AND expires_at > ?2 LIMIT 1`,
+         WHERE public_address = ?1 AND status = 'active' LIMIT 1`,
       )
-      .bind(address, nowIso())
+      .bind(address)
       .first<{ id: string; public_address: string }>();
     if (!row) return null;
     return { id: row.id, publicAddress: row.public_address };
@@ -180,6 +175,26 @@ export class TempMailStore {
         JSON.stringify(attachments),
       )
       .run();
+
+    const rows = await this.db
+      .prepare(
+        `SELECT id FROM emails WHERE mailbox_id = ?1 ORDER BY received_at DESC, id DESC`,
+      )
+      .bind(mailbox.id)
+      .all<{ id: string }>();
+
+    const keepIds = (rows.results || []).slice(0, 6).map((row) => row.id);
+    if (keepIds.length < (rows.results || []).length) {
+      const deletedIds = (rows.results || []).slice(6).map((row) => row.id);
+      if (deletedIds.length > 0) {
+        const placeholders = deletedIds.map((_, index) => `?${index + 2}`).join(", ");
+        await this.db
+          .prepare(`DELETE FROM emails WHERE mailbox_id = ?1 AND id IN (${placeholders})`)
+          .bind(mailbox.id, ...deletedIds)
+          .run();
+      }
+    }
+
     return true;
   }
 
@@ -283,9 +298,9 @@ export class TempMailStore {
     const row = await this.db
       .prepare(
         `SELECT id, public_address FROM mailboxes
-         WHERE owner_id = ?1 AND public_address = ?2 AND status = 'active' AND expires_at > ?3 LIMIT 1`,
+         WHERE owner_id = ?1 AND public_address = ?2 AND status = 'active' LIMIT 1`,
       )
-      .bind(ownerId, addr, nowIso())
+      .bind(ownerId, addr)
       .first<{ id: string; public_address: string }>();
     if (!row) return null;
     return { id: row.id, publicAddress: row.public_address };
@@ -321,21 +336,6 @@ export class TempMailStore {
     return res.meta.changes > 0;
   }
 
-  private async expireMailboxById(id: string): Promise<void> {
-    await this.db
-      .prepare("UPDATE mailboxes SET status = 'expired' WHERE id = ?1 AND status = 'active'")
-      .bind(id)
-      .run();
-  }
-
-  /** Sweep all expired mailboxes (used by optional cron / admin endpoint). */
-  async expireStaleMailboxes(): Promise<number> {
-    const res = await this.db
-      .prepare("UPDATE mailboxes SET status = 'expired' WHERE status = 'active' AND expires_at <= ?1")
-      .bind(nowIso())
-      .run();
-    return res.meta.changes ?? 0;
-  }
 }
 
 function parseAttachments(json: string | null): AttachmentMeta[] {
