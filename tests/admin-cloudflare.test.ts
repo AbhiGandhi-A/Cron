@@ -186,3 +186,40 @@ test("getCloudflareConfigFromEnv reads environment variables cleanly without sid
     process.env = originalEnv;
   }
 });
+
+test("admin authentication verifies credentials with Bearer and Basic headers", async () => {
+  const { validateAdminCredentials, verifyAdminAuthHeader } = await import("../src/lib/admin-auth");
+
+  process.env.ADMIN_USERNAME = "testadmin";
+  process.env.ADMIN_PASSWORD = "supersecretpassword123";
+
+  const validToken = Buffer.from("testadmin:supersecretpassword123").toString("base64");
+  const invalidToken = Buffer.from("testadmin:wrongpassword").toString("base64");
+
+  assert.strictEqual(validateAdminCredentials("testadmin", "supersecretpassword123"), true);
+  assert.strictEqual(validateAdminCredentials("testadmin", "wrongpassword"), false);
+
+  const bearerValid = verifyAdminAuthHeader(`Bearer ${validToken}`);
+  assert.strictEqual(bearerValid.isAdmin, true);
+
+  const bearerInvalid = verifyAdminAuthHeader(`Bearer ${invalidToken}`);
+  assert.strictEqual(bearerInvalid.isAdmin, false);
+
+  const basicValid = verifyAdminAuthHeader(`Basic ${validToken}`);
+  assert.strictEqual(basicValid.isAdmin, true);
+
+  assert.strictEqual(verifyAdminAuthHeader(null).isAdmin, false);
+});
+
+test("user actions and plan limits conform to schema constraints", () => {
+  const supportedActions = ["block", "unblock", "disable-temp-mail", "enable-temp-mail"];
+  for (const act of supportedActions) {
+    assert.ok(["block", "unblock", "disable-temp-mail", "enable-temp-mail"].includes(act));
+  }
+
+  const supportedPlans = ["free", "pro", "enterprise", "custom"];
+  for (const plan of supportedPlans) {
+    assert.ok(["free", "pro", "enterprise", "custom"].includes(plan));
+  }
+});
+

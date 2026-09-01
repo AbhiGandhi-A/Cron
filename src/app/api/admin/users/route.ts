@@ -23,14 +23,29 @@ export async function GET(req: NextRequest) {
 
     // Build query
     const query: Record<string, unknown> = {};
-    if (status && ["active", "blocked"].includes(status)) {
-      query.status = status;
+    if (status) {
+      if (status === "blocked") {
+        query.status = "blocked";
+      } else if (status === "active") {
+        query.$or = [
+          { status: "active" },
+          { status: { $exists: false } },
+          { status: null },
+          { status: { $ne: "blocked" } },
+        ];
+      }
     }
     if (search) {
-      query.$or = [
+      const searchOr = [
         { email: { $regex: search, $options: "i" } },
         { name: { $regex: search, $options: "i" } },
       ];
+      if (query.$or) {
+        query.$and = [{ $or: query.$or }, { $or: searchOr }];
+        delete query.$or;
+      } else {
+        query.$or = searchOr;
+      }
     }
 
     // Get total count
@@ -87,6 +102,11 @@ export async function GET(req: NextRequest) {
 
         return {
           ...user,
+          status: user.status === "blocked" ? "blocked" : "active",
+          plan: user.plan || "free",
+          maxJobs: user.maxJobs || 10,
+          maxExecutions: user.maxExecutions || 1000,
+          tempMailDisabled: Boolean(user.tempMailDisabled),
           tempMailboxes: mailboxCount,
           tempEmails: emailCount,
         };

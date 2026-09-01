@@ -119,13 +119,14 @@ export default function UsersPage() {
   };
 
   const openManageModal = async (user: User) => {
+    const isBlocked = user.status === "blocked";
     setSelectedUser(user);
     setEditForm({
       name: user.name || "",
       plan: user.plan || "free",
       maxJobs: user.maxJobs || 10,
       maxExecutions: user.maxExecutions || 1000,
-      status: user.status || "active",
+      status: isBlocked ? "blocked" : "active",
       tempMailDisabled: Boolean(user.tempMailDisabled),
     });
     setUserDetails(null);
@@ -147,12 +148,13 @@ export default function UsersPage() {
           tempMail: data.tempMail,
         });
         if (data.user) {
+          const apiBlocked = data.user.status === "blocked";
           setEditForm({
             name: data.user.name || "",
             plan: data.user.plan || "free",
             maxJobs: data.user.maxJobs || 10,
             maxExecutions: data.user.maxExecutions || 1000,
-            status: data.user.status || "active",
+            status: apiBlocked ? "blocked" : "active",
             tempMailDisabled: Boolean(data.user.tempMailDisabled),
           });
         }
@@ -398,35 +400,37 @@ export default function UsersPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {users.map((user) => (
-                    <tr key={user._id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="px-5 py-3.5">
-                        <div className="font-bold text-slate-900">{user.name || "Anonymous"}</div>
-                        <div className="text-slate-500 font-mono text-[11px]">{user.email}</div>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
-                            user.status === "active"
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                              : "bg-red-50 text-red-700 border-red-200"
-                          }`}
-                        >
-                          <span className={`w-1.5 h-1.5 rounded-full ${user.status === "active" ? "bg-emerald-500" : "bg-red-500"}`} />
-                          {user.status === "active" ? "Active" : "Blocked"}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
-                            user.tempMailDisabled
-                              ? "bg-red-50 text-red-700 border-red-200"
-                              : "bg-blue-50 text-blue-700 border-blue-200"
-                          }`}
-                        >
-                          {user.tempMailDisabled ? "Disabled" : "Enabled"}
-                        </span>
-                      </td>
+                  {users.map((user) => {
+                    const isBlocked = user.status === "blocked";
+                    return (
+                      <tr key={user._id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="px-5 py-3.5">
+                          <div className="font-bold text-slate-900">{user.name || "Anonymous"}</div>
+                          <div className="text-slate-500 font-mono text-[11px]">{user.email}</div>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
+                              isBlocked
+                                ? "bg-red-50 text-red-700 border-red-200"
+                                : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            }`}
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full ${isBlocked ? "bg-red-500" : "bg-emerald-500"}`} />
+                            {isBlocked ? "Blocked" : "Active"}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                              user.tempMailDisabled
+                                ? "bg-red-50 text-red-700 border-red-200"
+                                : "bg-blue-50 text-blue-700 border-blue-200"
+                            }`}
+                          >
+                            {user.tempMailDisabled ? "Disabled" : "Enabled"}
+                          </span>
+                        </td>
                       <td className="px-5 py-3.5">
                         <span className="font-semibold text-slate-700 uppercase text-[11px]">{user.plan || "Free"}</span>
                       </td>
@@ -441,8 +445,9 @@ export default function UsersPage() {
                           Manage
                         </button>
                       </td>
-                    </tr>
-                  ))}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -533,16 +538,7 @@ export default function UsersPage() {
 
             {/* Quick Status Toggles */}
             <div className="flex flex-col sm:flex-row gap-2 pt-1">
-              {editForm.status === "active" ? (
-                <button
-                  type="button"
-                  onClick={() => handleUserAction(selectedUser._id, "block")}
-                  disabled={actionLoading}
-                  className="flex-1 py-2 px-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 transition font-semibold text-xs disabled:opacity-50 text-center cursor-pointer"
-                >
-                  🚫 {actionLoading ? "Processing..." : "Block Account"}
-                </button>
-              ) : (
+              {editForm.status === "blocked" ? (
                 <button
                   type="button"
                   onClick={() => handleUserAction(selectedUser._id, "unblock")}
@@ -550,6 +546,15 @@ export default function UsersPage() {
                   className="flex-1 py-2 px-3 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 transition font-semibold text-xs disabled:opacity-50 text-center cursor-pointer"
                 >
                   ✅ {actionLoading ? "Processing..." : "Unblock Account"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleUserAction(selectedUser._id, "block")}
+                  disabled={actionLoading}
+                  className="flex-1 py-2 px-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 transition font-semibold text-xs disabled:opacity-50 text-center cursor-pointer"
+                >
+                  🚫 {actionLoading ? "Processing..." : "Block Account"}
                 </button>
               )}
 
