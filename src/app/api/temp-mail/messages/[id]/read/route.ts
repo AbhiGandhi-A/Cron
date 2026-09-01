@@ -3,9 +3,8 @@ import { z } from "zod";
 import {
   getUserIdFromSession,
   logError,
-  validateObjectId,
 } from "@/lib/security";
-import { markMessageRead } from "@/lib/temp-mail";
+import { markMessageRead, isValidMessageId } from "@/lib/temp-mail";
 
 const bodySchema = z
   .object({
@@ -25,7 +24,7 @@ export async function POST(
     }
 
     const { id } = await params;
-    if (!validateObjectId(id)) {
+    if (!isValidMessageId(id)) {
       return NextResponse.json({ error: "Invalid message id" }, { status: 400 });
     }
 

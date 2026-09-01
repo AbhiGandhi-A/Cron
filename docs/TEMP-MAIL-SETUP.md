@@ -175,3 +175,44 @@ dashboard and send to the exact address it shows.
 
 Without provider credentials and DNS records, the UI correctly shows
 **"Temporary email receiving is not configured."** — no fake emails are shown.
+
+---
+
+# Cloudflare Workers option (recommended)
+
+Instead of a third-party provider + HTTP webhook, you can run the temp-mail
+backend on **Cloudflare Workers** using **D1** for storage and **Email
+Routing** for inbound delivery. The existing dashboard UI and Next.js routes
+work unchanged; they are forwarded to the worker when configured.
+
+## How it fits together
+
+```
+email → Cloudflare Email Routing → worker email() handler → D1
+                                                                   ↳ (parse + sanitize + store)
+dashboard UI → /api/temp-mail/* (Next.js) ──TEMP_MAIL_SERVICE_URL──▶ worker fetch() API → D1
+```
+
+- Worker source: `cloudflare-worker/` (own `wrangler.toml`, `package.json`, tests).
+- Next.js bridge: `src/lib/temp-mail/bridge.ts` picks the worker when
+  `TEMP_MAIL_SERVICE_URL` + `TEMP_MAIL_SERVICE_SECRET` are set, otherwise falls
+  back to the MailPace/MongoDB path above (unchanged).
+- Read `cloudflare-worker/README.md` for the full manual Cloudflare setup
+  (D1 creation, Email Routing catch-all, custom domain, secrets).
+
+## Required environment variables (Next.js / Vercel)
+
+```
+TEMP_MAIL_SERVICE_URL=https://api.cronjobs.site
+TEMP_MAIL_SERVICE_SECRET=<long-random-secret>
+```
+
+`TEMP_MAIL_SERVICE_SECRET` must match the worker secret set with
+`npx wrangler secret put TEMP_MAIL_SERVICE_SECRET`. Never commit real values.
+
+## DNS for the Cloudflare path
+
+With Email Routing you still add records for `temp.cronjobs.site`, but they are
+provided and managed by the **Cloudflare dashboard's Email Routing wizard**
+for the `cronjobs.site` zone (MX + optional TXT SPF/DKIM). Do not copy the
+MailPace values above when using Cloudflare Email Routing.

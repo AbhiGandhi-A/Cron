@@ -4,9 +4,8 @@ import {
   getAuthenticatedIdentifier,
   getUserIdFromSession,
   logError,
-  validateObjectId,
 } from "@/lib/security";
-import { getMessage, markMessageRead, deleteMessage } from "@/lib/temp-mail";
+import { getMessage, markMessageRead, deleteMessage, isValidMessageId } from "@/lib/temp-mail";
 
 export async function GET(
   req: Request,
@@ -30,7 +29,7 @@ export async function GET(
     }
 
     const { id } = await params;
-    if (!validateObjectId(id)) {
+    if (!isValidMessageId(id)) {
       return NextResponse.json({ error: "Invalid message id" }, { status: 400 });
     }
 
@@ -71,7 +70,7 @@ export async function DELETE(
     }
 
     const { id } = await params;
-    if (!validateObjectId(id)) {
+    if (!isValidMessageId(id)) {
       return NextResponse.json({ error: "Invalid message id" }, { status: 400 });
     }
 

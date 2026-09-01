@@ -1,0 +1,47 @@
+# =============================================================================
+# Cloudflare Worker - cronjobs-worker (Temporary Email backend)
+#
+# IMPORTANT: This is the Cloudflare Workers configuration for the temp-email
+# backend. Several values are placeholders and MUST be filled in / created
+# manually in the Cloudflare dashboard before deploying. See `README.md`
+# ("Manual Cloudflare setup") for the exact step-by-step instructions.
+#
+# Required manual resources (values NOT invented here — you must create them):
+#   - `account_id`  : your Cloudflare account ID.
+#   - `database_id` : the D1 database ID. Create the D1 DB in the dashboard,
+#                     then paste its ID here and run the migration.
+#   - Custom domain: `api.cronjobs.site` must be attached to this worker.
+#   - Email Routing: enable Email Routing + a Catch-all rule on
+#                     temp.cronjobs.site that sends to this worker.
+# =============================================================================
+
+name = "cronjobs-worker"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+# Custom domain route. api.cronjobs.site must already exist as a custom domain
+# in your Cloudflare dashboard. The pattern below routes HTTP requests for
+# that domain to this worker's `fetch()` handler.
+routes = [{ pattern = "api.cronjobs.site/*", zone_name = "cronjobs.site" }]
+
+# D1 binding name must match the `env.DB` binding used in the source code.
+[[d1_databases]]
+binding = "DB"                     # name used in source: env.DB
+database_name = "cronjobs_temp_mail_db"
+database_id = "e6ae1a8a-f9e4-48e6-94c3-18649c023a8e"   # TODO: paste real D1 database id
+
+# -----------------------------------------------------------------------------
+# Email Routing -> Worker.
+#
+# NOTE: Inbound email for *@temp.cronjobs.site is delivered to this worker's
+# `email()` handler. The routing itself is configured in the Cloudflare
+# dashboard (Email -> Email Routing -> Catch-all -> "Send to Worker") rather
+# than in wrangler.toml; newer wrangler versions accept an [[email_routing]]
+# binding here, older versions (3.114) do not, so it is omitted. The handler
+# only needs the exported `email()` function and a dashboard rule.
+# -----------------------------------------------------------------------------
+
+# Optional scheduled cleanup (not required for correctness — expiration is
+# enforced lazily on every read, see src/expiration.ts and src/store.ts).
+# [triggers]
+# crons = ["*/10 * * * *"]

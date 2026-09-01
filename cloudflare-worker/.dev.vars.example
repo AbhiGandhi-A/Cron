@@ -1,0 +1,19 @@
+# Worker secrets / local env (never commit real values).
+# Copy to .dev.vars and fill in locally. In production these come from
+# Cloudflare Workers Secrets (wrangler secret put). See README.
+
+# Shared secret that the Next.js backend uses to authenticate to this Worker.
+# Must match TEMP_MAIL_SERVICE_SECRET set in the Next.js app.
+TEMP_MAIL_SERVICE_SECRET="replace-with-a-long-random-string"
+
+# Domain prefix used to build temporary addresses (must match Email Routing zone).
+TEMP_MAIL_DOMAIN="temp.cronjobs.site"
+
+# Mailbox lifetime in minutes (clamped 1-1440; default 30).
+TEMP_MAIL_EXPIRATION_MINUTES="30"
+
+# Default pagination cap for message listings (1-100; default 20).
+TEMP_MAIL_PAGE_SIZE="20"
+
+# Human-friendly app name shown in responses / error headers.
+TEMP_MAIL_APP_NAME="CronJob.io"
