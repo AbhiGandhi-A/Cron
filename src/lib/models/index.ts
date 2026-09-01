@@ -6,3 +6,5 @@ export { TestUrl, type ITestUrl, TestUrlRequest, type ITestUrlRequest } from "./
 export { AiIssue, type IAiIssue } from "./AiIssue";
 export { GeneratedApi, type IGeneratedApi } from "./GeneratedApi";
 export { AiConversation, type IAiConversation, type AiConversationKind } from "./AiConversation";
+export { TemporaryMailbox, type ITemporaryMailbox, type MailboxStatus } from "./TemporaryMailbox";
+export { TemporaryEmail, type ITemporaryEmail, type IEmailAttachment } from "./TemporaryEmail";
