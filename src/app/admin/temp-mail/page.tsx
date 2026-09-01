@@ -292,13 +292,6 @@ export default function TempMailPage() {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {workerMetrics.map((metric) => (
-                  <div key={metric.id} className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="font-bold text-slate-700">{metric.label}</span>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        Active
-                      </span>
                 {workerMetrics.map((metric) => {
                   const hasLimit = metric.limit !== null && metric.limit > 0;
                   const isBytes = metric.unit === "bytes";
@@ -366,12 +359,6 @@ export default function TempMailPage() {
                         </div>
                       )}
                     </div>
-                    <div className="text-2xl font-extrabold text-slate-900">
-                      {metric.current !== null ? formatNumber(metric.current) : "Unavailable"}
-                    </div>
-                    <p className="text-[11px] text-slate-400">Reset: {metric.resetPeriod}</p>
-                  </div>
-                ))}
                   );
                 })}
               </div>

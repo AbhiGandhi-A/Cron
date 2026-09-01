@@ -337,26 +337,59 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
     }
   }
 
-  // Dynamic Plan Limits (configurable via env, defaulting to Cloudflare standard tier quotas)
+  // Fetch Zone details to dynamically identify Cloudflare Plan
+  let detectedPlanName = "Free";
+  let zoneRef: CloudflareZoneRef | null = zoneId ? { id: zoneId, name: null } : null;
+  if (zoneId) {
+    const zoneInfoRes = await fetchJson<{
+      result?: {
+        id?: string;
+        name?: string;
+        status?: string;
+        plan?: { name?: string; legacy_id?: string };
+      };
+    }>(`/zones/${encodeURIComponent(zoneId)}`, token);
+
+    if (zoneInfoRes.ok && zoneInfoRes.data?.result) {
+      const zRes = zoneInfoRes.data.result;
+      detectedPlanName = zRes.plan?.name || zRes.plan?.legacy_id || "Free";
+      zoneRef = {
+        id: zRes.id || zoneId,
+        name: zRes.name || null,
+        status: zRes.status || null,
+        plan: detectedPlanName,
+      };
+    }
+  }
+
+  // Determine official Cloudflare Plan Quotas dynamically based on Cloudflare plan tier
+  const isPaidTier = /paid|pro|business|enterprise/i.test(detectedPlanName);
+
+  const defaultWorkerRequestsLimit = isPaidTier ? 10000000 : 100000; // 10M for Paid / 100k for Free
+  const defaultWorkerSubrequestsLimit = isPaidTier ? 10000 : 500000;
+  const defaultD1StorageLimit = isPaidTier ? 1099511627776 : 5368709120; // 1 TB for Paid / 5 GB (5,368,709,120 bytes) for Free
+  const defaultD1RowsReadLimit = isPaidTier ? 500000000 : 5000000; // 500M for Paid / 5M for Free
+  const defaultD1RowsWrittenLimit = isPaidTier ? 50000000 : 100000; // 50M for Paid / 100k for Free
+
   const workerRequestsLimit = safeNumber(
     process.env.CLOUDFLARE_WORKERS_REQUEST_LIMIT || process.env.CLOUDFLARE_WORKER_REQUEST_LIMIT,
-    100000 // Standard Cloudflare Free tier: 100,000 requests/day
+    defaultWorkerRequestsLimit
   );
   const workerSubrequestsLimit = safeNumber(
     process.env.CLOUDFLARE_WORKERS_SUBREQUEST_LIMIT || process.env.CLOUDFLARE_WORKER_SUBREQUEST_LIMIT,
-    500000 // Standard Cloudflare Free tier: 500,000 subrequests/day
+    defaultWorkerSubrequestsLimit
   );
   const d1StorageLimit = safeNumber(
     process.env.CLOUDFLARE_D1_STORAGE_LIMIT_BYTES || process.env.CLOUDFLARE_D1_STORAGE_LIMIT,
-    524288000 // Standard Cloudflare Free tier: 500 MB (524,288,000 bytes)
+    defaultD1StorageLimit
   );
   const d1RowsReadLimit = safeNumber(
     process.env.CLOUDFLARE_D1_ROWS_READ_LIMIT,
-    5000000 // Standard Cloudflare Free tier: 5,000,000 rows read/day
+    defaultD1RowsReadLimit
   );
   const d1RowsWrittenLimit = safeNumber(
     process.env.CLOUDFLARE_D1_ROWS_WRITTEN_LIMIT,
-    100000 // Standard Cloudflare Free tier: 100,000 rows written/day
+    defaultD1RowsWrittenLimit
   );
 
   // Worker Requests Metric
@@ -367,7 +400,6 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
       label: "Worker Requests (24h)",
       category: "workers",
       usage: totalWorkerRequests,
-      limit: null, // Cloudflare GraphQL analytics does not expose static plan quotas dynamically; strictly marked Unavailable
       limit: workerRequestsLimit,
       resetPeriod: "Last 24 Hours",
       unit: "requests",
@@ -409,7 +441,6 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
         label: "Worker Subrequests (24h)",
         category: "workers",
         usage: totalWorkerSubrequests,
-        limit: null,
         limit: workerSubrequestsLimit,
         resetPeriod: "Last 24 Hours",
         unit: "subrequests",
@@ -470,7 +501,6 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
           label: "D1 Storage Size",
           category: "d1",
           usage: d1SizeBytes,
-          limit: null, // Plan limit is not returned dynamically by D1 REST API; marked Unavailable
           limit: d1StorageLimit,
           resetPeriod: "Total Size",
           unit: "bytes",
@@ -487,7 +517,6 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
           label: "D1 Storage Size",
           category: "d1",
           usage: null,
-          limit: null,
           limit: d1StorageLimit,
           resetPeriod: "Total Size",
           unit: "bytes",
@@ -574,7 +603,6 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
         label: "D1 Rows Read (24h)",
         category: "d1",
         usage: d1RowsRead,
-        limit: null,
         limit: d1RowsReadLimit,
         resetPeriod: "Last 24 Hours",
         unit: "rows",
@@ -591,7 +619,6 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
         label: "D1 Rows Written (24h)",
         category: "d1",
         usage: d1RowsWritten,
-        limit: null,
         limit: d1RowsWrittenLimit,
         resetPeriod: "Last 24 Hours",
         unit: "rows",
@@ -601,29 +628,8 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
     );
   }
 
-  // 5. Query Zone Details & Analytics
-  let zoneRef: CloudflareZoneRef | null = zoneId ? { id: zoneId, name: null } : null;
+  // 5. Query Zone Analytics (GraphQL)
   if (zoneId) {
-    const zoneInfoRes = await fetchJson<{
-      result?: {
-        id?: string;
-        name?: string;
-        status?: string;
-        plan?: { name?: string };
-      };
-    }>(`/zones/${encodeURIComponent(zoneId)}`, token);
-
-    if (zoneInfoRes.ok && zoneInfoRes.data?.result) {
-      const zRes = zoneInfoRes.data.result;
-      zoneRef = {
-        id: zRes.id || zoneId,
-        name: zRes.name || null,
-        status: zRes.status || null,
-        plan: zRes.plan?.name || null,
-      };
-    }
-
-    // Zone Analytics (GraphQL)
     const dateStart = startIso.split("T")[0];
     const dateEnd = endIso.split("T")[0];
 
