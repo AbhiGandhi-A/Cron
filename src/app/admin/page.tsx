@@ -755,10 +755,6 @@ export default function AdminDashboard() {
               </span>
             </Link>
             <div className="p-3 bg-slate-50 rounded-xl">
-              <span className="text-xs text-slate-500 block">Active Mailboxes</span>
-              <span className="text-xl font-bold text-slate-900">{formatNumber(stats.tempMail.mailboxes)}</span>
-            </div>
-            <div className="p-3 bg-slate-50 rounded-xl">
               <span className="text-xs text-slate-500 block">Total Emails</span>
               <span className="text-xl font-bold text-slate-900">{formatNumber(stats.tempMail.totalEmails)}</span>
             </div>
