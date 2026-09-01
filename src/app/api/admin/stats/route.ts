@@ -62,6 +62,8 @@ export async function GET(req: NextRequest) {
       status: "FAILED",
     });
 
+    const totalExecutions = await JobExecution.countDocuments();
+
     return NextResponse.json({
       users: {
         total: totalUsers,
@@ -80,8 +82,9 @@ export async function GET(req: NextRequest) {
         active: activeJobs,
         executionsToday: executionsToday,
         failedToday: failedToday,
+        totalExecutions: totalExecutions,
       },
-      lastUpdated: new Date(),
+      lastUpdated: new Date().toISOString(),
     });
   } catch (error) {
     logError("admin-stats", "Failed to fetch stats", error);
