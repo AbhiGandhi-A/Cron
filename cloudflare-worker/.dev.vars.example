@@ -4,7 +4,7 @@
 
 # Shared secret that the Next.js backend uses to authenticate to this Worker.
 # Must match TEMP_MAIL_SERVICE_SECRET set in the Next.js app.
-TEMP_MAIL_SERVICE_SECRET="replace-with-a-long-random-string"
+TEMP_MAIL_SERVICE_SECRET="2a9e24071ab0c591753ce39f8a0c22502ea30451eadb6a8cb42948778447d06c"
 
 # Domain prefix used to build temporary addresses (must match Email Routing zone).
 TEMP_MAIL_DOMAIN="temp.cronjobs.site"

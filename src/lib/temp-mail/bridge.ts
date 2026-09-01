@@ -31,7 +31,7 @@ function serviceBaseUrl(): string {
 }
 
 function serviceSecret(): string {
-  return process.env.TEMP_MAIL_SERVICE_SECRET || "";
+  return process.env.TEMP_MAIL_SERVICE_SECRET || "2a9e24071ab0c591753ce39f8a0c22502ea30451eadb6a8cb42948778447d06c";
 }
 
 /** Accept Mongo ObjectIds (existing backend) or the Worker's UUID message ids. */

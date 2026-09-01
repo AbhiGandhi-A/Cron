@@ -91,6 +91,7 @@ export default function TempMailClient() {
           const created = await createRes.json();
           data = { mailbox: created, configured: true };
           setMailbox(created);
+          await refreshMessages(created);
           return;
         }
         if (createRes.status === 503) {
@@ -172,17 +173,7 @@ export default function TempMailClient() {
     if (!mailbox) return;
     setRefreshing(true);
     try {
-      await Promise.all([
-        fetch("/api/temp-mail/refresh", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            mailboxToken: mailbox.mailboxToken,
-            publicAddress: mailbox.publicAddress,
-          }),
-        }).catch(() => null),
-        refreshMessages(mailbox),
-      ]);
+      await refreshMessages(mailbox);
       toast.showToast("Inbox refreshed", "success");
     } finally {
       setRefreshing(false);
