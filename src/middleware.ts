@@ -68,6 +68,12 @@ export default withAuth(
           pathname === "/auth/login" ||
           pathname === "/auth/register" ||
           pathname === "/admin/login" ||
+          (pathname.startsWith("/google") && pathname.endsWith(".html")) ||
+          pathname.endsWith(".png") ||
+          pathname.endsWith(".svg") ||
+          pathname.endsWith(".ico") ||
+          pathname.endsWith(".txt") ||
+          pathname.endsWith(".xml") ||
           publicPages.some(
             (p) => pathname === p || pathname.startsWith(p + "/")
           );
@@ -84,5 +90,6 @@ export default withAuth(
 export const config = {
   matcher: [
     "/((?!auth|api/auth|api/test|api/public|api/temp-mail/webhook|_next/static|_next/image|favicon.ico).*)",
+    "/((?!auth|api/auth|api/test|api/public|api/temp-mail/webhook|_next/static|_next/image|favicon.ico|google.*\\.html|.*\\.(?:ico|png|jpg|jpeg|svg|txt|xml)).*)",
   ],
 };
