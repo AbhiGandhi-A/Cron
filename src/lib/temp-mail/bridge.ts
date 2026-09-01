@@ -40,7 +40,7 @@ export function isValidMessageId(id: string): boolean {
   return UUID_V4.test(id);
 }
 
-async function workerFetch(
+export async function workerFetch(
   path: string,
   init?: RequestInit
 ): Promise<Response> {

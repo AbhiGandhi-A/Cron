@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import connectDb from "@/lib/mongodb";
 import { TemporaryMailbox, TemporaryEmail, User } from "@/lib/models";
 import { getCloudflareConfigFromEnv } from "@/lib/cloudflare-config";
+import { isUsingCloudflare, workerFetch } from "./bridge";
 
 export interface TempMailAggregateStats {
   mailboxes: {
@@ -35,9 +36,21 @@ interface D1QueryResult<T = Record<string, unknown>> {
   result?: Array<{
     results?: T[];
     success?: boolean;
+    meta?: {
+      changes?: number;
+      last_row_id?: number;
+      rows_read?: number;
+      rows_written?: number;
+    };
   }>;
   success?: boolean;
   errors?: Array<{ code: number; message: string }>;
+}
+
+interface D1MutationResult {
+  success: boolean;
+  changes: number;
+  error?: string;
 }
 
 /**
@@ -84,6 +97,59 @@ async function queryD1<T = Record<string, unknown>>(
     return data.result[0]?.results || [];
   } catch {
     return [];
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
+ * Execute a mutation query (INSERT, UPDATE, DELETE) against Cloudflare D1 via Cloudflare REST API.
+ */
+async function executeD1Mutation(
+  sql: string,
+  params: (string | number | boolean | null)[] = []
+): Promise<D1MutationResult> {
+  const { accountId, d1DatabaseId, apiToken } = getCloudflareConfigFromEnv();
+
+  if (!accountId || !d1DatabaseId || !apiToken) {
+    return { success: false, changes: 0, error: "Cloudflare credentials not configured" };
+  }
+
+  const url = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(
+    accountId
+  )}/d1/database/${encodeURIComponent(d1DatabaseId)}/query`;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ sql, params }),
+      signal: controller.signal,
+      cache: "no-store",
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      return { success: false, changes: 0, error: `HTTP ${res.status}: ${errText}` };
+    }
+
+    const data = (await res.json()) as D1QueryResult;
+    if (!data.success || !Array.isArray(data.result) || data.result.length === 0) {
+      const errMsg = JSON.stringify(data.errors || data);
+      return { success: false, changes: 0, error: errMsg };
+    }
+
+    const firstResult = data.result[0];
+    const changes = firstResult?.meta?.changes ?? (firstResult?.success ? 1 : 0);
+    return { success: firstResult?.success !== false, changes };
+  } catch (err) {
+    return { success: false, changes: 0, error: String(err) };
   } finally {
     clearTimeout(timeout);
   }
@@ -400,14 +466,11 @@ export async function cleanExpiredMailboxes(): Promise<{
 
   // 1. Cloudflare D1 update
   try {
-    const d1Sql = `
-      UPDATE mailboxes 
-      SET status = 'expired' 
-      WHERE status = 'active' AND expires_at < datetime('now');
-    `;
-    const results = await queryD1(d1Sql);
-    if (results) {
-      d1Modified = 1;
+    const d1Res = await executeD1Mutation(
+      `UPDATE mailboxes SET status = 'expired' WHERE status = 'active' AND expires_at < datetime('now');`
+    );
+    if (d1Res.success) {
+      d1Modified = d1Res.changes;
     }
   } catch {
     // D1 fallback
@@ -578,30 +641,71 @@ export async function adminDeleteMailbox(identifier: string): Promise<boolean> {
   let d1Deleted = false;
   let mongoDeleted = false;
   const cleanIdentifier = identifier.trim().toLowerCase();
+  const now = new Date().toISOString();
 
-  // 1. D1 Delete
+  // 1. D1 Lookup, Deletion, and Message Purge
   try {
-    const now = new Date().toISOString();
-    await queryD1(
-      `UPDATE mailboxes SET status = 'deleted', expires_at = ?1 WHERE public_address = ?2 OR id = ?2;`,
-      [now, cleanIdentifier]
+    // Step A: Look up matching mailbox in D1
+    const foundRows = await queryD1<{ id: string; owner_id: string; public_address: string }>(
+      `SELECT id, owner_id, public_address FROM mailboxes WHERE LOWER(public_address) = LOWER(?) OR id = ? LIMIT 10;`,
+      [cleanIdentifier, cleanIdentifier]
     );
-    await queryD1(
-      `DELETE FROM emails WHERE mailbox_id IN (SELECT id FROM mailboxes WHERE public_address = ?1 OR id = ?1);`,
-      [cleanIdentifier]
+
+    const mailboxIds = foundRows.map((r) => r.id).filter(Boolean);
+
+    // Step B: Update status to 'deleted' and expires_at in D1
+    const updateResult = await executeD1Mutation(
+      `UPDATE mailboxes SET status = 'deleted', expires_at = ? WHERE LOWER(public_address) = LOWER(?) OR id = ?;`,
+      [now, cleanIdentifier, cleanIdentifier]
     );
-    d1Deleted = true;
-  } catch {
-    // D1 fallback
+
+    if (updateResult.success && (updateResult.changes > 0 || foundRows.length > 0)) {
+      d1Deleted = true;
+    }
+
+    // Step C: Delete associated emails in D1
+    if (mailboxIds.length > 0) {
+      for (const mbId of mailboxIds) {
+        await executeD1Mutation(`DELETE FROM emails WHERE mailbox_id = ?;`, [mbId]);
+      }
+    } else {
+      await executeD1Mutation(
+        `DELETE FROM emails WHERE mailbox_id IN (SELECT id FROM mailboxes WHERE LOWER(public_address) = LOWER(?) OR id = ?);`,
+        [cleanIdentifier, cleanIdentifier]
+      );
+    }
+
+    // Step D: Synchronize with Cloudflare Worker if reachable
+    for (const row of foundRows) {
+      if (row.owner_id && isUsingCloudflare()) {
+        try {
+          await workerFetch("/api/temp-mail", {
+            method: "DELETE",
+            body: JSON.stringify({ ownerId: row.owner_id, publicAddress: row.public_address }),
+          });
+          d1Deleted = true;
+        } catch {
+          // ignore worker fetch error if direct D1 was updated
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[adminDeleteMailbox D1 Error]", err);
   }
 
-  // 2. Mongo Delete
+  // 2. MongoDB Lookup, Deletion, and Message Purge
   try {
     await connectDb();
     const isObjId = mongoose.Types.ObjectId.isValid(cleanIdentifier);
+    const escaped = cleanIdentifier.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const query = isObjId
-      ? { $or: [{ _id: cleanIdentifier }, { publicAddress: cleanIdentifier }] }
-      : { publicAddress: cleanIdentifier };
+      ? {
+          $or: [
+            { _id: cleanIdentifier },
+            { publicAddress: { $regex: new RegExp(`^${escaped}$`, "i") } },
+          ],
+        }
+      : { publicAddress: { $regex: new RegExp(`^${escaped}$`, "i") } };
 
     const mailboxes = await TemporaryMailbox.find(query).lean();
     if (mailboxes.length > 0) {
@@ -613,8 +717,8 @@ export async function adminDeleteMailbox(identifier: string): Promise<boolean> {
       await TemporaryEmail.deleteMany({ mailboxId: { $in: ids } });
       mongoDeleted = true;
     }
-  } catch {
-    // Mongo fallback
+  } catch (err) {
+    console.error("[adminDeleteMailbox Mongo Error]", err);
   }
 
   return d1Deleted || mongoDeleted;
