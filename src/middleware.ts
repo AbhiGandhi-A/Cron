@@ -67,6 +67,7 @@ export default withAuth(
           pathname === "/" ||
           pathname === "/auth/login" ||
           pathname === "/auth/register" ||
+          pathname === "/admin/login" ||
           publicPages.some(
             (p) => pathname === p || pathname.startsWith(p + "/")
           );
