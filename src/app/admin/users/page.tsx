@@ -55,6 +55,7 @@ export default function UsersPage() {
     message: string;
     type: "success" | "error" | "info";
   } | null>(null);
+
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [userDetails, setUserDetails] = useState<{
     jobs?: { total: number; totalExecutions: number };
@@ -220,7 +221,6 @@ export default function UsersPage() {
         body: JSON.stringify({ action }),
       });
 
-      if (!res.ok) throw new Error("Action failed");
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
         throw new Error(errData.error || "Action failed");
@@ -242,7 +242,6 @@ export default function UsersPage() {
       }
 
       fetchUsers();
-      setSelectedUser(null);
     } catch (err) {
       setToast({
         message: err instanceof Error ? err.message : "Action failed",
@@ -254,7 +253,6 @@ export default function UsersPage() {
   };
 
   const handleDeleteUser = async (userId: string, email: string) => {
-    if (!confirm(`Are you sure you want to permanently delete ${email}? All user jobs and data will be removed.`)) {
     if (!confirm(`Are you sure you want to permanently delete ${email}? All user jobs, mailboxes, and data will be removed.`)) {
       return;
     }
@@ -269,7 +267,6 @@ export default function UsersPage() {
         headers: { Authorization: token },
       });
 
-      if (!res.ok) throw new Error("Delete failed");
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
         throw new Error(errData.error || "Delete failed");
@@ -306,7 +303,6 @@ export default function UsersPage() {
             User Management
           </h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Search, inspect, block, or manage permissions for registered user accounts
             Search, inspect, manage plans, block accounts, and configure permissions
           </p>
         </div>
@@ -439,8 +435,6 @@ export default function UsersPage() {
                       </td>
                       <td className="px-5 py-3.5 text-right">
                         <button
-                          onClick={() => setSelectedUser(user)}
-                          className="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition"
                           onClick={() => openManageModal(user)}
                           className="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition cursor-pointer"
                         >
@@ -491,33 +485,24 @@ export default function UsersPage() {
         )}
       </div>
 
-      {/* User Management Modal */}
       {/* User Management & Quota Configuration Modal */}
       {selectedUser && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full p-6 space-y-5">
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-5 my-8 max-h-[90vh] overflow-y-auto">
             {/* Modal Header */}
             <div className="flex justify-between items-start border-b border-slate-100 pb-3">
               <div>
-                <h3 className="text-base font-bold text-slate-900">Manage User Account</h3>
                 <h3 className="text-lg font-bold text-slate-900">Manage User Account</h3>
                 <p className="text-xs text-slate-500 font-mono mt-0.5">{selectedUser.email}</p>
               </div>
               <button
                 onClick={() => setSelectedUser(null)}
-                className="text-slate-400 hover:text-slate-600 text-lg font-bold"
                 className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-base font-bold transition"
               >
                 ✕
               </button>
             </div>
 
-            <div className="space-y-2 text-xs bg-slate-50 p-4 rounded-xl border border-slate-200 text-slate-700">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Name:</span>
-                <span className="font-semibold">{selectedUser.name || "N/A"}</span>
             {/* Live Stats Overview */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
@@ -526,29 +511,18 @@ export default function UsersPage() {
                   {modalLoading ? "..." : userDetails?.jobs?.total ?? "0"}
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Status:</span>
-                <span className={`font-bold ${selectedUser.status === "active" ? "text-emerald-700" : "text-red-700"}`}>
-                  {selectedUser.status.toUpperCase()}
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
                 <span className="text-[10px] font-bold text-slate-500 uppercase block">Executions</span>
                 <span className="text-lg font-extrabold text-slate-900 block mt-0.5">
                   {modalLoading ? "..." : userDetails?.jobs?.totalExecutions ?? "0"}
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Temp Mail Access:</span>
-                <span className="font-semibold">
-                  {selectedUser.tempMailDisabled ? "Disabled" : "Active"}
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
                 <span className="text-[10px] font-bold text-slate-500 uppercase block">Mailboxes</span>
                 <span className="text-lg font-extrabold text-slate-900 block mt-0.5">
                   {modalLoading ? "..." : userDetails?.tempMail?.mailboxes ?? "0"}
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Registered:</span>
-                <span>{new Date(selectedUser.createdAt).toLocaleString()}</span>
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
                 <span className="text-[10px] font-bold text-slate-500 uppercase block">Messages</span>
                 <span className="text-lg font-extrabold text-slate-900 block mt-0.5">
@@ -557,8 +531,6 @@ export default function UsersPage() {
               </div>
             </div>
 
-            <div className="space-y-2.5">
-              {selectedUser.status === "active" ? (
             {/* Quick Status Toggles */}
             <div className="flex flex-col sm:flex-row gap-2 pt-1">
               {editForm.status === "active" ? (
@@ -566,10 +538,8 @@ export default function UsersPage() {
                   type="button"
                   onClick={() => handleUserAction(selectedUser._id, "block")}
                   disabled={actionLoading}
-                  className="w-full py-2.5 px-4 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 transition font-semibold text-xs disabled:opacity-50"
-                  className="flex-1 py-2 px-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 transition font-semibold text-xs disabled:opacity-50 text-center"
+                  className="flex-1 py-2 px-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 transition font-semibold text-xs disabled:opacity-50 text-center cursor-pointer"
                 >
-                  {actionLoading ? "Processing..." : "Block User (Prevent Sign In)"}
                   🚫 {actionLoading ? "Processing..." : "Block Account"}
                 </button>
               ) : (
@@ -577,24 +547,19 @@ export default function UsersPage() {
                   type="button"
                   onClick={() => handleUserAction(selectedUser._id, "unblock")}
                   disabled={actionLoading}
-                  className="w-full py-2.5 px-4 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 transition font-semibold text-xs disabled:opacity-50"
-                  className="flex-1 py-2 px-3 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 transition font-semibold text-xs disabled:opacity-50 text-center"
+                  className="flex-1 py-2 px-3 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 transition font-semibold text-xs disabled:opacity-50 text-center cursor-pointer"
                 >
-                  {actionLoading ? "Processing..." : "Unblock User"}
                   ✅ {actionLoading ? "Processing..." : "Unblock Account"}
                 </button>
               )}
 
-              {selectedUser.tempMailDisabled ? (
               {editForm.tempMailDisabled ? (
                 <button
                   type="button"
                   onClick={() => handleUserAction(selectedUser._id, "enable-temp-mail")}
                   disabled={actionLoading}
-                  className="w-full py-2.5 px-4 rounded-xl border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100 transition font-semibold text-xs disabled:opacity-50"
-                  className="flex-1 py-2 px-3 rounded-xl border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100 transition font-semibold text-xs disabled:opacity-50 text-center"
+                  className="flex-1 py-2 px-3 rounded-xl border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100 transition font-semibold text-xs disabled:opacity-50 text-center cursor-pointer"
                 >
-                  {actionLoading ? "Processing..." : "Enable Temporary Mail Service"}
                   📬 {actionLoading ? "Processing..." : "Enable Temp Mail"}
                 </button>
               ) : (
@@ -602,10 +567,8 @@ export default function UsersPage() {
                   type="button"
                   onClick={() => handleUserAction(selectedUser._id, "disable-temp-mail")}
                   disabled={actionLoading}
-                  className="w-full py-2.5 px-4 rounded-xl border border-slate-200 bg-slate-100 text-slate-800 hover:bg-slate-200 transition font-semibold text-xs disabled:opacity-50"
-                  className="flex-1 py-2 px-3 rounded-xl border border-slate-200 bg-slate-100 text-slate-800 hover:bg-slate-200 transition font-semibold text-xs disabled:opacity-50 text-center"
+                  className="flex-1 py-2 px-3 rounded-xl border border-slate-200 bg-slate-100 text-slate-800 hover:bg-slate-200 transition font-semibold text-xs disabled:opacity-50 text-center cursor-pointer"
                 >
-                  {actionLoading ? "Processing..." : "Disable Temporary Mail Service"}
                   📭 {actionLoading ? "Processing..." : "Disable Temp Mail"}
                 </button>
               )}
@@ -686,10 +649,8 @@ export default function UsersPage() {
                 type="button"
                 onClick={() => handleDeleteUser(selectedUser._id, selectedUser.email)}
                 disabled={actionLoading}
-                className="w-full py-2.5 px-4 rounded-xl border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition font-semibold text-xs disabled:opacity-50"
                 className="w-full py-2.5 px-4 rounded-xl border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition font-semibold text-xs disabled:opacity-50 cursor-pointer"
               >
-                {actionLoading ? "Processing..." : "Delete User Account Permanently"}
                 🗑️ Permanently Delete User & All Data
               </button>
             </div>

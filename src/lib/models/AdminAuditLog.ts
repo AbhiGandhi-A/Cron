@@ -8,7 +8,6 @@ export type AdminAction =
   | "temp_mail_disabled"
   | "temp_mail_enabled"
   | "user_deleted"
-  | "user_updated"
   | "temp_mail_disabled_global"
   | "temp_mail_enabled_global"
   | "usage_protection_triggered"

@@ -639,8 +639,6 @@ export default function AdminDashboard() {
                       </p>
                       <p className="text-xs text-slate-400 mt-0.5">Reset: {metric.resetPeriod}</p>
                     </div>
-                    <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      Healthy
                     <span
                       className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
                         metric.status === "critical"
@@ -666,14 +664,11 @@ export default function AdminDashboard() {
                   <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-xs">
                     <div>
                       <span className="text-slate-400 block">Plan Limit</span>
-                      <span className="font-semibold text-slate-700">Unmetered (CDN)</span>
                       <span className="font-semibold text-slate-700">
                         {hasLimit ? formattedLimit : "Unmetered (CDN)"}
                       </span>
                     </div>
                     <div>
-                      <span className="text-slate-400 block">Status</span>
-                      <span className="font-semibold text-emerald-700">Active</span>
                       <span className="text-slate-400 block">Remaining</span>
                       <span className="font-semibold text-slate-700">
                         {metric.remaining !== null ? formattedRemaining : "Active"}
