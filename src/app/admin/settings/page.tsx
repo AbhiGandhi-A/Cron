@@ -2,6 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { Toast } from "@/components/admin/Toast";
+import {
+  ZapIcon,
+  LockIcon,
+  CheckCircleIcon,
+  AlertTriangleIcon,
+} from "@/components/admin/AdminIcons";
 
 interface CloudflareConfigState {
   accountId: string;
@@ -153,6 +159,7 @@ export default function SettingsPage() {
           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition disabled:opacity-60 cursor-pointer"
         >
           <span className={testing ? "animate-spin" : ""}>⚡</span>
+          <ZapIcon className={`w-3.5 h-3.5 ${testing ? "animate-spin" : ""}`} />
           {testing ? "Testing Cloudflare..." : "Test Cloudflare Connection"}
         </button>
       </div>
@@ -171,6 +178,7 @@ export default function SettingsPage() {
           {/* Notice Alert */}
           <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-4 text-xs text-blue-800 flex items-start gap-3">
             <span className="text-base shrink-0">🔒</span>
+            <LockIcon className="w-4 h-4 shrink-0 text-blue-700 mt-0.5" />
             <div>
               <span className="font-bold">Security Invariant:</span> Cloudflare credentials and API tokens are loaded
               strictly from server-side environment variables (<code className="font-mono bg-blue-100/80 px-1 py-0.5 rounded">.env</code>).
@@ -190,6 +198,11 @@ export default function SettingsPage() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <span className="text-xl">{testResult.connected ? "✅" : "⚠️"}</span>
+                  {testResult.connected ? (
+                    <CheckCircleIcon className="w-5 h-5 text-emerald-600 shrink-0" />
+                  ) : (
+                    <AlertTriangleIcon className="w-5 h-5 text-amber-600 shrink-0" />
+                  )}
                   <div>
                     <h3 className="font-bold text-sm text-slate-900">
                       Connection Test: {testResult.status}

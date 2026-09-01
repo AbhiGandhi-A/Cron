@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Toast } from "@/components/admin/Toast";
+import { ZapIcon } from "@/components/admin/AdminIcons";
 
 export default function AdminLogin() {
   const router = useRouter();
@@ -71,8 +72,8 @@ export default function AdminLogin() {
       <div className="w-full max-w-md space-y-6">
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 space-y-6">
           <div className="text-center space-y-2">
-            <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-blue-600 text-white font-bold text-2xl shadow-xs">
-              ⚡
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-blue-600 text-white font-bold shadow-xs">
+              <ZapIcon className="w-6 h-6" />
             </div>
             <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
               Admin Portal

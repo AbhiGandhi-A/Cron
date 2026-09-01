@@ -1,6 +1,17 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useState, useEffect, ComponentType, SVGProps } from "react";
+import {
+  DatabaseIcon,
+  CloudIcon,
+  ZapIcon,
+  RocketIcon,
+  RefreshIcon,
+  CheckCircleIcon,
+  AlertTriangleIcon,
+  WrenchIcon,
+} from "@/components/admin/AdminIcons";
 
 interface ServiceHealth {
   name: string;
@@ -55,6 +66,12 @@ export default function HealthPage() {
     cloudflareWorker: "⚡",
     cloudflareD1: "💾",
     nextjsApi: "🚀",
+  const serviceIcons: Record<string, ComponentType<SVGProps<SVGSVGElement>>> = {
+    mongodb: DatabaseIcon,
+    cloudflare: CloudIcon,
+    cloudflareWorker: ZapIcon,
+    cloudflareD1: DatabaseIcon,
+    nextjsApi: RocketIcon,
   };
 
   const statusMeta: Record<string, { label: string; badge: string; border: string }> = {
@@ -88,6 +105,7 @@ export default function HealthPage() {
           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition disabled:opacity-60 cursor-pointer"
         >
           <span className={refreshing ? "animate-spin" : ""}>🔄</span>
+          <RefreshIcon className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
           {refreshing ? "Checking Services..." : "Refresh Health"}
         </button>
       </div>
@@ -113,6 +131,11 @@ export default function HealthPage() {
           >
             <div className="flex items-center gap-3.5">
               <span className="text-3xl">{health.healthy ? "✅" : "⚠️"}</span>
+              {health.healthy ? (
+                <CheckCircleIcon className="w-8 h-8 text-emerald-600 shrink-0" />
+              ) : (
+                <AlertTriangleIcon className="w-8 h-8 text-amber-600 shrink-0" />
+              )}
               <div>
                 <h2 className="text-lg font-bold">
                   {health.healthy ? "All Active Systems Operational" : "System Degraded or Issues Detected"}
@@ -133,6 +156,7 @@ export default function HealthPage() {
             {Object.entries(health.services).map(([key, service]) => {
               const meta = statusMeta[service.status] || statusMeta.ok;
               const icon = serviceIcons[key] || "🔧";
+              const Icon = serviceIcons[key] || WrenchIcon;
 
               return (
                 <div
@@ -143,6 +167,8 @@ export default function HealthPage() {
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-center text-xl shrink-0">
                         {icon}
+                      <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-center text-slate-700 shrink-0">
+                        <Icon className="w-5 h-5" />
                       </div>
                       <div>
                         <h3 className="font-bold text-sm text-slate-900">{service.name || key}</h3>

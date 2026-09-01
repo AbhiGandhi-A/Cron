@@ -3,6 +3,14 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { Toast } from "@/components/admin/Toast";
+import {
+  CheckCircleIcon,
+  BanIcon,
+  MailIcon,
+  MailXIcon,
+  TrashIcon,
+  CloseIcon,
+} from "@/components/admin/AdminIcons";
 
 interface User {
   _id: string;
@@ -503,8 +511,10 @@ export default function UsersPage() {
               <button
                 onClick={() => setSelectedUser(null)}
                 className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-base font-bold transition"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
               >
                 ✕
+                <CloseIcon className="w-4 h-4" />
               </button>
             </div>
 
@@ -544,8 +554,11 @@ export default function UsersPage() {
                   onClick={() => handleUserAction(selectedUser._id, "unblock")}
                   disabled={actionLoading}
                   className="flex-1 py-2 px-3 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 transition font-semibold text-xs disabled:opacity-50 text-center cursor-pointer"
+                  className="inline-flex items-center justify-center gap-1.5 flex-1 py-2 px-3 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 transition font-semibold text-xs disabled:opacity-50 text-center cursor-pointer"
                 >
                   ✅ {actionLoading ? "Processing..." : "Unblock Account"}
+                  <CheckCircleIcon className="w-3.5 h-3.5" />
+                  {actionLoading ? "Processing..." : "Unblock Account"}
                 </button>
               ) : (
                 <button
@@ -553,8 +566,11 @@ export default function UsersPage() {
                   onClick={() => handleUserAction(selectedUser._id, "block")}
                   disabled={actionLoading}
                   className="flex-1 py-2 px-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 transition font-semibold text-xs disabled:opacity-50 text-center cursor-pointer"
+                  className="inline-flex items-center justify-center gap-1.5 flex-1 py-2 px-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 transition font-semibold text-xs disabled:opacity-50 text-center cursor-pointer"
                 >
                   🚫 {actionLoading ? "Processing..." : "Block Account"}
+                  <BanIcon className="w-3.5 h-3.5" />
+                  {actionLoading ? "Processing..." : "Block Account"}
                 </button>
               )}
 
@@ -564,8 +580,11 @@ export default function UsersPage() {
                   onClick={() => handleUserAction(selectedUser._id, "enable-temp-mail")}
                   disabled={actionLoading}
                   className="flex-1 py-2 px-3 rounded-xl border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100 transition font-semibold text-xs disabled:opacity-50 text-center cursor-pointer"
+                  className="inline-flex items-center justify-center gap-1.5 flex-1 py-2 px-3 rounded-xl border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100 transition font-semibold text-xs disabled:opacity-50 text-center cursor-pointer"
                 >
                   📬 {actionLoading ? "Processing..." : "Enable Temp Mail"}
+                  <MailIcon className="w-3.5 h-3.5" />
+                  {actionLoading ? "Processing..." : "Enable Temp Mail"}
                 </button>
               ) : (
                 <button
@@ -573,8 +592,11 @@ export default function UsersPage() {
                   onClick={() => handleUserAction(selectedUser._id, "disable-temp-mail")}
                   disabled={actionLoading}
                   className="flex-1 py-2 px-3 rounded-xl border border-slate-200 bg-slate-100 text-slate-800 hover:bg-slate-200 transition font-semibold text-xs disabled:opacity-50 text-center cursor-pointer"
+                  className="inline-flex items-center justify-center gap-1.5 flex-1 py-2 px-3 rounded-xl border border-slate-200 bg-slate-100 text-slate-800 hover:bg-slate-200 transition font-semibold text-xs disabled:opacity-50 text-center cursor-pointer"
                 >
                   📭 {actionLoading ? "Processing..." : "Disable Temp Mail"}
+                  <MailXIcon className="w-3.5 h-3.5" />
+                  {actionLoading ? "Processing..." : "Disable Temp Mail"}
                 </button>
               )}
             </div>
@@ -655,8 +677,11 @@ export default function UsersPage() {
                 onClick={() => handleDeleteUser(selectedUser._id, selectedUser.email)}
                 disabled={actionLoading}
                 className="w-full py-2.5 px-4 rounded-xl border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition font-semibold text-xs disabled:opacity-50 cursor-pointer"
+                className="inline-flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition font-semibold text-xs disabled:opacity-50 cursor-pointer"
               >
                 🗑️ Permanently Delete User & All Data
+                <TrashIcon className="w-3.5 h-3.5" />
+                Permanently Delete User & All Data
               </button>
             </div>
           </div>
