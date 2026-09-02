@@ -1,0 +1,10 @@
+{
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": "cron-job-free.vercel.app" }],
+      "destination": "https://cronjobs.site/:splat",
+      "permanent": true
+    }
+  ]
+}
