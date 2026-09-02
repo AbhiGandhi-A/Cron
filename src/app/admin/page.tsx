@@ -156,6 +156,19 @@ export default function AdminDashboard() {
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
 
   useEffect(() => {
+    const cached = localStorage.getItem("adminDashboardStatsCache");
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached) as Stats;
+        if (parsed && parsed.lastUpdated) {
+          setStats(parsed);
+          setLoading(false);
+          return;
+        }
+      } catch {
+        // Invalid cache - fall through to fresh fetch
+      }
+    }
     fetchStats();
   }, []);
 
@@ -175,10 +188,16 @@ export default function AdminDashboard() {
       }
 
       const data = await res.json();
-      setStats({
+      const nextStats = {
         ...data,
         lastUpdated: data.lastUpdated || new Date().toISOString(),
-      });
+      };
+      setStats(nextStats);
+      try {
+        localStorage.setItem("adminDashboardStatsCache", JSON.stringify(nextStats));
+      } catch {
+        // Storage may be unavailable - non-critical
+      }
       setError("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load dashboard statistics");
