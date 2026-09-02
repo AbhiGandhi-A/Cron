@@ -12,6 +12,8 @@ export interface IUser extends Document {
   maxExecutions: number;
   status: UserStatus;
   tempMailDisabled: boolean;
+  totalRuns: number;
+  successfulRuns: number;
   lastLoginAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -27,6 +29,8 @@ const UserSchema = new Schema<IUser>(
     maxExecutions: { type: Number, default: 1000 },
     status: { type: String, enum: ["active", "blocked"], default: "active", index: true },
     tempMailDisabled: { type: Boolean, default: false },
+    totalRuns: { type: Number, default: 0 },
+    successfulRuns: { type: Number, default: 0 },
     lastLoginAt: { type: Date, default: null },
   },
   { timestamps: true }

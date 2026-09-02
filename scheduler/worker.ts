@@ -1,4 +1,4 @@
-import { CronJobModel } from "./models";
+import { CronJobModel, UserModel } from "./models";
 import { JobExecutionModel } from "./jobExecutionModel";
 import { SchedulerHeartbeatModel } from "./heartbeatModel";
 import { executeWithRetry } from "./retry";
@@ -113,6 +113,18 @@ export async function processJob(jobId: string, isCatchUp = false): Promise<void
     });
 
     const status = result.status;
+
+    try {
+      const successDelta = status === "SUCCESS" ? 1 : 0;
+      await UserModel.findByIdAndUpdate(job.userId, {
+        $inc: { totalRuns: 1, successfulRuns: successDelta },
+      });
+      await CronJobModel.findByIdAndUpdate(jobId, {
+        $inc: { totalRuns: 1, successfulRuns: successDelta },
+      });
+    } catch (error) {
+      logger.error("worker", "Failed to update run counters for " + jobId, error);
+    }
 
     let nextRunAt: Date | null = null;
     try {

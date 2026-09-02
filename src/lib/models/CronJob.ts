@@ -32,6 +32,8 @@ export interface ICronJob extends Document {
   lastRunAt: Date | null;
   nextRunAt: Date | null;
   consecutiveFailures: number;
+  totalRuns: number;
+  successfulRuns: number;
   notifications: INotificationConfig;
   lockedAt: Date | null;
   lockedBy: string | null;
@@ -71,6 +73,8 @@ const CronJobSchema = new Schema<ICronJob>(
     lastRunAt: { type: Date, default: null },
     nextRunAt: { type: Date, default: null, index: true },
     consecutiveFailures: { type: Number, default: 0 },
+    totalRuns: { type: Number, default: 0 },
+    successfulRuns: { type: Number, default: 0 },
     notifications: { type: NotificationSchema, default: () => ({}) },
     lockedAt: { type: Date, default: null },
     lockedBy: { type: String, default: null },

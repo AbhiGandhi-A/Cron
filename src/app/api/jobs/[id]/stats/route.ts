@@ -69,19 +69,32 @@ export async function GET(
       return bucket ? bucket.count : 0;
     };
 
-    const totalFinished = avgResult.length > 0 ? avgResult[0].total : 0;
-    const success = countOf("SUCCESS");
-    const failed = countOf("FAILED");
+    let totalFinished = job.totalRuns ?? 0;
+    let success = job.successfulRuns ?? 0;
+    if (totalFinished === 0) {
+      const legacyTotal = await JobExecution.countDocuments({ jobId: id });
+      if (legacyTotal > 0) {
+        const legacySuccess = await JobExecution.countDocuments({ jobId: id, status: "SUCCESS" });
+        await CronJob.updateOne(
+          { _id: job._id, totalRuns: 0 },
+          { $set: { totalRuns: legacyTotal, successfulRuns: legacySuccess } }
+        );
+        totalFinished = legacyTotal;
+        success = legacySuccess;
+      }
+    }
+    const failed = totalFinished - success;
     const timeouts = countOf("TIMEOUT");
+    const retries = countOf("RETRY");
 
     return NextResponse.json({
       stats: {
-        totalExecutions: countOf("RUNNING") + countOf("PENDING") + countOf("RETRY") + totalFinished,
+        totalExecutions: totalFinished,
         totalFinished,
         success,
         failed,
         timeouts,
-        retries: countOf("RETRY"),
+        retries,
         successRate: totalFinished > 0 ? Math.round((success / totalFinished) * 1000) / 10 : null,
         avgResponseTime: avgResult.length > 0 && avgResult[0].avgResponseTime != null
           ? Math.round(avgResult[0].avgResponseTime)

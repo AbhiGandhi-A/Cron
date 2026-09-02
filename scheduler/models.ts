@@ -22,6 +22,8 @@ export interface ICronJob extends Document {
   lastRunAt: Date | null;
   nextRunAt: Date | null;
   consecutiveFailures: number;
+  totalRuns: number;
+  successfulRuns: number;
   notifications: {
     enabled: boolean;
     url: string;
@@ -67,6 +69,8 @@ const CronJobSchema = new Schema<ICronJob>(
     lastRunAt: { type: Date, default: null },
     nextRunAt: { type: Date, default: null, index: true },
     consecutiveFailures: { type: Number, default: 0 },
+    totalRuns: { type: Number, default: 0 },
+    successfulRuns: { type: Number, default: 0 },
     notifications: { type: NotificationSchema, default: () => ({}) },
     lockedAt: { type: Date, default: null },
     lockedBy: { type: String, default: null },
@@ -79,3 +83,20 @@ CronJobSchema.index({ isRunning: 1, lockedAt: 1 });
 
 export const CronJobModel: Model<ICronJob> =
   mongoose.models.CronJob || mongoose.model<ICronJob>("CronJob", CronJobSchema);
+
+export interface IUser extends Document {
+  _id: mongoose.Types.ObjectId;
+  totalRuns: number;
+  successfulRuns: number;
+}
+
+const UserSchema = new Schema<IUser>(
+  {
+    totalRuns: { type: Number, default: 0 },
+    successfulRuns: { type: Number, default: 0 },
+  },
+  { collection: "users", timestamps: true }
+);
+
+export const UserModel: Model<IUser> =
+  mongoose.models.User || mongoose.model<IUser>("User", UserSchema);

@@ -198,6 +198,10 @@ export async function POST(
     await pruneExecutionLogs(lock._id.toString());
 
     const finalStatus = result.status;
+    const successDelta = finalStatus === "SUCCESS" ? 1 : 0;
+    await User.findByIdAndUpdate(userId, {
+      $inc: { totalRuns: 1, successfulRuns: successDelta },
+    });
 
     let nextRunAt: Date | null = null;
     try {
@@ -212,6 +216,7 @@ export async function POST(
       lockedBy: null,
       lastRunAt: new Date(),
       nextRunAt,
+      $inc: { totalRuns: 1, successfulRuns: successDelta },
     });
 
     return NextResponse.json({

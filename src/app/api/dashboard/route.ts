@@ -24,21 +24,16 @@ export async function GET(req: Request) {
 
     await connectDb();
 
-    const [totalJobs, activeJobs, failedJobCount, successfulExecutions, totalExecutions, recentExecutions] =
+    const userJobIds = await CronJob.distinct("_id", { userId });
+
+    const [totalJobs, activeJobs, failedJobCount, recentExecutions] =
       await Promise.all([
         CronJob.countDocuments({ userId }),
         CronJob.countDocuments({ userId, isActive: true }),
         JobExecution.distinct("jobId", {
           status: "FAILED",
-          jobId: { $in: await CronJob.distinct("_id", { userId }) },
+          jobId: { $in: userJobIds },
         }).then((ids) => ids.length),
-        JobExecution.countDocuments({
-          jobId: { $in: await CronJob.distinct("_id", { userId }) },
-          status: "SUCCESS",
-        }),
-        JobExecution.countDocuments({
-          jobId: { $in: await CronJob.distinct("_id", { userId }) },
-        }),
         JobExecution.aggregate([
           {
             $lookup: {
@@ -67,18 +62,36 @@ export async function GET(req: Request) {
         ]),
       ]);
 
+    const user = await User.findById(userId).lean();
+    let lifetimeTotal = user?.totalRuns ?? 0;
+    let lifetimeSuccess = user?.successfulRuns ?? 0;
+    if (lifetimeTotal === 0) {
+      const legacyTotal = await JobExecution.countDocuments({
+        jobId: { $in: userJobIds },
+      });
+      if (legacyTotal > 0) {
+        const legacySuccess = await JobExecution.countDocuments({
+          jobId: { $in: userJobIds },
+          status: "SUCCESS",
+        });
+        await User.updateOne(
+          { _id: userId, totalRuns: 0 },
+          { $set: { totalRuns: legacyTotal, successfulRuns: legacySuccess } }
+        );
+        lifetimeTotal = legacyTotal;
+        lifetimeSuccess = legacySuccess;
+      }
+    }
+
     // compute daily executions for the current user
     const now = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-
-    const userJobIds = await CronJob.distinct("_id", { userId });
 
     const dailyExecutions = await JobExecution.countDocuments({
       jobId: { $in: userJobIds },
       startedAt: { $gte: startOfDay },
     });
 
-    const user = await User.findById(userId).lean();
     const maxExecutions = user?.maxExecutions ?? 1000;
     const maxJobs = user?.maxJobs ?? 10;
     const dailyRemaining = Math.max(0, maxExecutions - dailyExecutions);
@@ -89,11 +102,11 @@ export async function GET(req: Request) {
         totalJobs,
         activeJobs,
         failedJobs: failedJobCount,
-        successfulExecutions,
-        totalExecutions,
+        successfulExecutions: lifetimeSuccess,
+        totalExecutions: lifetimeTotal,
         successRate:
-          totalExecutions > 0
-            ? Math.round((successfulExecutions / totalExecutions) * 100)
+          lifetimeTotal > 0
+            ? Math.round((lifetimeSuccess / lifetimeTotal) * 100)
             : 0,
         recentExecutions,
         dailyExecutions,
