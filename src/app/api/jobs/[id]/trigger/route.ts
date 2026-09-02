@@ -15,6 +15,7 @@ async function getUserId(): Promise<string | null> {
 
 const LOCK_EXPIRY_MS = 5 * 60 * 1000;
 const STORED_RESPONSE_BODY_BYTES = 20_000;
+const MAX_EXECUTION_LOGS = 20;
 
 async function executeWithRetry(
   job: {
@@ -88,6 +89,18 @@ async function executeWithRetry(
   }
 
   return result;
+}
+
+async function pruneExecutionLogs(jobId: string): Promise<void> {
+  const keep = await JobExecution.find({ jobId })
+    .sort({ startedAt: -1 })
+    .limit(MAX_EXECUTION_LOGS)
+    .select("_id")
+    .lean();
+  if (keep.length >= MAX_EXECUTION_LOGS) {
+    const keepIds = keep.map((e) => e._id);
+    await JobExecution.deleteMany({ jobId, _id: { $nin: keepIds } });
+  }
 }
 
 export async function POST(
@@ -182,6 +195,8 @@ export async function POST(
       schedule: lock.schedule,
     });
 
+    await pruneExecutionLogs(lock._id.toString());
+
     const finalStatus = result.status;
 
     let nextRunAt: Date | null = null;
@@ -227,6 +242,7 @@ export async function POST(
       const { id } = await params;
       if (validateObjectId(id)) {
         await connectDb();
+        await pruneExecutionLogs(id);
         await CronJob.findByIdAndUpdate(id, {
           isRunning: false,
           lockedAt: null,
