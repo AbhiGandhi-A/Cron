@@ -12,6 +12,8 @@ import {
   ActivityIcon,
   HealthIcon,
   SettingsIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
 } from "@/components/admin/AdminIcons";
 
 interface LayoutProps {
@@ -159,7 +161,16 @@ export default function AdminLayout({ children }: LayoutProps) {
             className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
             title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
           >
-            <span>{sidebarOpen ? "← Collapse Sidebar" : "→"}</span>
+            <span className="inline-flex items-center gap-1.5">
+              {sidebarOpen ? (
+                <>
+                  <ChevronLeftIcon className="w-4 h-4" />
+                  Collapse Sidebar
+                </>
+              ) : (
+                <ChevronRightIcon className="w-4 h-4" />
+              )}
+            </span>
           </button>
         </div>
       </aside>

@@ -1,6 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, ReactNode } from "react";
+import {
+  RefreshIcon,
+  CheckCircleIcon,
+  AlertTriangleIcon,
+  DatabaseIcon,
+  CloudIcon,
+  ZapIcon,
+  RocketIcon,
+  WrenchIcon,
+} from "@/components/admin/AdminIcons";
 
 interface ServiceHealth {
   name: string;
@@ -49,12 +59,12 @@ export default function HealthPage() {
     }
   };
 
-  const serviceIcons: Record<string, string> = {
-    mongodb: "🗄️",
-    cloudflare: "☁️",
-    cloudflareWorker: "⚡",
-    cloudflareD1: "💾",
-    nextjsApi: "🚀",
+  const serviceIcons: Record<string, ReactNode> = {
+    mongodb: <DatabaseIcon className="w-5 h-5" />,
+    cloudflare: <CloudIcon className="w-5 h-5" />,
+    cloudflareWorker: <ZapIcon className="w-5 h-5" />,
+    cloudflareD1: <DatabaseIcon className="w-5 h-5" />,
+    nextjsApi: <RocketIcon className="w-5 h-5" />,
   };
 
   const statusMeta: Record<string, { label: string; badge: string; border: string }> = {
@@ -87,7 +97,7 @@ export default function HealthPage() {
           disabled={refreshing}
           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition disabled:opacity-60 cursor-pointer"
         >
-          <span className={refreshing ? "animate-spin" : ""}>🔄</span>
+          <RefreshIcon className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
           {refreshing ? "Checking Services..." : "Refresh Health"}
         </button>
       </div>
@@ -112,7 +122,9 @@ export default function HealthPage() {
             }`}
           >
             <div className="flex items-center gap-3.5">
-              <span className="text-3xl">{health.healthy ? "✅" : "⚠️"}</span>
+              <span className="inline-flex items-center">
+                {health.healthy ? <CheckCircleIcon className="w-8 h-8" /> : <AlertTriangleIcon className="w-8 h-8" />}
+              </span>
               <div>
                 <h2 className="text-lg font-bold">
                   {health.healthy ? "All Active Systems Operational" : "System Degraded or Issues Detected"}
@@ -132,7 +144,7 @@ export default function HealthPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {Object.entries(health.services).map(([key, service]) => {
               const meta = statusMeta[service.status] || statusMeta.ok;
-              const icon = serviceIcons[key] || "🔧";
+              const icon = serviceIcons[key] || <WrenchIcon className="w-5 h-5" />;
 
               return (
                 <div

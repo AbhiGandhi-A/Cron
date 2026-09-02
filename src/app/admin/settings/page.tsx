@@ -314,15 +314,22 @@ export default function SettingsPage() {
                 <p className="text-xs text-slate-500">Configured via server-side environment (.env)</p>
               </div>
               <span
-                className={`px-3 py-1 rounded-full text-xs font-semibold border ${
+                className={`px-3 py-1 rounded-full text-xs font-semibold border inline-flex items-center gap-1.5 ${
                   data.cloudflare.accountId && (data.cloudflare.apiTokenPresent || data.cloudflare.configured)
                     ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                     : "bg-amber-50 text-amber-700 border-amber-200"
                 }`}
               >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    data.cloudflare.accountId && (data.cloudflare.apiTokenPresent || data.cloudflare.configured)
+                      ? "bg-emerald-500"
+                      : "bg-amber-500"
+                  }`}
+                />
                 {data.cloudflare.accountId && (data.cloudflare.apiTokenPresent || data.cloudflare.configured)
-                  ? "● Configured in ENV"
-                  : "● Incomplete ENV"}
+                  ? "Configured in ENV"
+                  : "Incomplete ENV"}
               </span>
             </div>
 

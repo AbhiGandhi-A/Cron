@@ -767,7 +767,7 @@ export default function AdminDashboard() {
             >
               <div className="flex items-center justify-between">
                 <span className="text-xs text-slate-500 group-hover:text-emerald-800 font-medium">Active Mailboxes</span>
-                <span className="text-[10px] text-emerald-600 font-semibold opacity-0 group-hover:opacity-100 transition">View →</span>
+                <span className="inline-flex items-center gap-0.5 text-[10px] text-emerald-600 font-semibold opacity-0 group-hover:opacity-100 transition">View <ArrowRightIcon className="w-3 h-3" /></span>
               </div>
               <span className="text-xl font-bold text-slate-900 group-hover:text-emerald-700 mt-0.5 block">
                 {formatNumber(stats.tempMail.mailboxes)}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { RefreshIcon, CheckCircleIcon, CloseIcon } from "@/components/admin/AdminIcons";
 
 interface ActivityLog {
   _id: string;
@@ -114,7 +115,7 @@ export default function ActivityPage() {
           disabled={refreshing}
           className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition disabled:opacity-60 cursor-pointer"
         >
-          <span className={refreshing ? "animate-spin" : ""}>🔄</span>
+          <RefreshIcon className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
           {refreshing ? "Refreshing..." : "Refresh Logs"}
         </button>
       </div>
@@ -217,11 +218,11 @@ export default function ActivityPage() {
                         <td className="px-5 py-3.5">
                           {log.success ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              <span>✓</span> Success
+                              <CheckCircleIcon className="w-3 h-3" /> Success
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-700 border border-red-200">
-                              <span>✗</span> Failed
+                              <CloseIcon className="w-3 h-3" /> Failed
                             </span>
                           )}
                         </td>

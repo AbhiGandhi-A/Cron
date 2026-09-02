@@ -3,6 +3,14 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { Toast } from "@/components/admin/Toast";
+import {
+  CheckCircleIcon,
+  BanIcon,
+  MailIcon,
+  MailXIcon,
+  TrashIcon,
+  CloseIcon,
+} from "@/components/admin/AdminIcons";
 
 interface User {
   _id: string;
@@ -712,7 +720,7 @@ export default function UsersPage() {
                 onClick={() => setSelectedUser(null)}
                 className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-base font-bold transition"
               >
-                ✕
+                <CloseIcon className="w-4 h-4" />
               </button>
             </div>
 
@@ -753,7 +761,10 @@ export default function UsersPage() {
                   disabled={actionLoading}
                   className="flex-1 py-2 px-3 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 transition font-semibold text-xs disabled:opacity-50 text-center cursor-pointer"
                 >
-                  ✅ {actionLoading ? "Processing..." : "Unblock Account"}
+                  <span className="inline-flex items-center justify-center gap-1.5">
+                    <CheckCircleIcon className="w-4 h-4" />
+                    {actionLoading ? "Processing..." : "Unblock Account"}
+                  </span>
                 </button>
               ) : (
                 <button
@@ -762,7 +773,10 @@ export default function UsersPage() {
                   disabled={actionLoading}
                   className="flex-1 py-2 px-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 transition font-semibold text-xs disabled:opacity-50 text-center cursor-pointer"
                 >
-                  🚫 {actionLoading ? "Processing..." : "Block Account"}
+                  <span className="inline-flex items-center justify-center gap-1.5">
+                    <BanIcon className="w-4 h-4" />
+                    {actionLoading ? "Processing..." : "Block Account"}
+                  </span>
                 </button>
               )}
 
@@ -773,7 +787,10 @@ export default function UsersPage() {
                   disabled={actionLoading}
                   className="flex-1 py-2 px-3 rounded-xl border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100 transition font-semibold text-xs disabled:opacity-50 text-center cursor-pointer"
                 >
-                  📬 {actionLoading ? "Processing..." : "Enable Temp Mail"}
+                  <span className="inline-flex items-center justify-center gap-1.5">
+                    <MailIcon className="w-4 h-4" />
+                    {actionLoading ? "Processing..." : "Enable Temp Mail"}
+                  </span>
                 </button>
               ) : (
                 <button
@@ -782,7 +799,10 @@ export default function UsersPage() {
                   disabled={actionLoading}
                   className="flex-1 py-2 px-3 rounded-xl border border-slate-200 bg-slate-100 text-slate-800 hover:bg-slate-200 transition font-semibold text-xs disabled:opacity-50 text-center cursor-pointer"
                 >
-                  📭 {actionLoading ? "Processing..." : "Disable Temp Mail"}
+                  <span className="inline-flex items-center justify-center gap-1.5">
+                    <MailXIcon className="w-4 h-4" />
+                    {actionLoading ? "Processing..." : "Disable Temp Mail"}
+                  </span>
                 </button>
               )}
             </div>
@@ -965,7 +985,10 @@ export default function UsersPage() {
                 disabled={actionLoading}
                 className="w-full py-2.5 px-4 rounded-xl border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition font-semibold text-xs disabled:opacity-50 cursor-pointer"
               >
-                🗑️ Permanently Delete User & All Data
+                <span className="inline-flex items-center justify-center gap-1.5">
+                  <TrashIcon className="w-4 h-4" />
+                  Permanently Delete User & All Data
+                </span>
               </button>
             </div>
           </div>
@@ -1006,7 +1029,7 @@ export default function UsersPage() {
                 onClick={() => setSelectedJob(null)}
                 className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-base font-bold transition"
               >
-                ✕
+                <CloseIcon className="w-4 h-4" />
               </button>
             </div>
 
