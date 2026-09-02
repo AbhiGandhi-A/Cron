@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { RefreshIcon, CheckCircleIcon, CloseIcon } from "@/components/admin/AdminIcons";
+import { getSessionCache, setSessionCache } from "@/lib/admin-session-cache";
 
 interface ActivityLog {
   _id: string;
@@ -42,6 +43,14 @@ const actionBadges: Record<string, { bg: string; text: string; border: string }>
   mailbox_cleaned: { bg: "bg-purple-50", text: "text-purple-700", border: "border-purple-200" },
 };
 
+interface ActivityCacheData {
+  logs: ActivityLog[];
+  actions: string[];
+  pagination: PaginationData;
+  actionFilter: string;
+  days: number;
+}
+
 export default function ActivityPage() {
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [actions, setActions] = useState<string[]>([]);
@@ -56,7 +65,27 @@ export default function ActivityPage() {
   const [actionFilter, setActionFilter] = useState("");
   const [days, setDays] = useState(7);
 
+  const lastLoadedKeyRef = useRef<string | null>(null);
+
   useEffect(() => {
+    const requestKey = `${actionFilter}|${days}|${pagination.page}`;
+    const cached = getSessionCache<ActivityCacheData>("adminActivityCache");
+
+    if (cached && lastLoadedKeyRef.current === null) {
+      const cachedKey = `${cached.actionFilter}|${cached.days}|${cached.pagination.page}`;
+      setLogs(cached.logs);
+      setActions(cached.actions);
+      setPagination(cached.pagination);
+      setActionFilter(cached.actionFilter);
+      setDays(cached.days);
+      setLoading(false);
+      lastLoadedKeyRef.current = cachedKey;
+      return;
+    }
+
+    if (requestKey === lastLoadedKeyRef.current) return;
+
+    lastLoadedKeyRef.current = requestKey;
     fetchLogs();
   }, [actionFilter, days, pagination.page]);
 
@@ -81,9 +110,19 @@ export default function ActivityPage() {
       if (!res.ok) throw new Error("Failed to fetch activity logs");
 
       const data = await res.json();
-      setLogs(data.logs || []);
-      setPagination(data.pagination || { page: 1, limit: 50, total: 0, totalPages: 0 });
-      setActions(data.actions || []);
+      const nextPagination = data.pagination || { page: 1, limit: 50, total: 0, totalPages: 0 };
+      const nextLogs = data.logs || [];
+      const nextActions = data.actions || [];
+      setLogs(nextLogs);
+      setPagination(nextPagination);
+      setActions(nextActions);
+      setSessionCache<ActivityCacheData>("adminActivityCache", {
+        logs: nextLogs,
+        actions: nextActions,
+        pagination: nextPagination,
+        actionFilter,
+        days,
+      });
     } catch (err) {
       console.error(err);
     } finally {

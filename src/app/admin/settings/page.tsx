@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Toast } from "@/components/admin/Toast";
+import { getSessionCache, setSessionCache } from "@/lib/admin-session-cache";
 import {
   ZapIcon,
   LockIcon,
@@ -63,6 +64,12 @@ export default function SettingsPage() {
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
 
   useEffect(() => {
+    const cached = getSessionCache<SettingsResponse>("adminSettingsCache");
+    if (cached) {
+      setData(cached);
+      setLoading(false);
+      return;
+    }
     fetchSettings();
   }, []);
 
@@ -81,6 +88,7 @@ export default function SettingsPage() {
 
       const json = await res.json();
       setData(json);
+      setSessionCache<SettingsResponse>("adminSettingsCache", json);
     } catch (err) {
       console.error(err);
       setToast({

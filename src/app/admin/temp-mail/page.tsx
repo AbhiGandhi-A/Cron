@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Toast } from "@/components/admin/Toast";
 import Link from "next/link";
+import { getSessionCache, setSessionCache } from "@/lib/admin-session-cache";
 import {
   MailIcon,
   RefreshIcon,
@@ -112,6 +113,12 @@ export default function TempMailPage() {
   const activeMailboxTableRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    const cached = getSessionCache<TempMailStats>("adminTempMailCache");
+    if (cached) {
+      setStats(cached);
+      setLoading(false);
+      return;
+    }
     fetchStats();
   }, []);
 
@@ -130,6 +137,7 @@ export default function TempMailPage() {
 
       const data = await res.json();
       setStats(data);
+      setSessionCache<TempMailStats>("adminTempMailCache", data);
     } catch (err) {
       setToast({
         message: err instanceof Error ? err.message : "Failed to load stats",

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, ReactNode } from "react";
+import { getSessionCache, setSessionCache } from "@/lib/admin-session-cache";
 import {
   RefreshIcon,
   CheckCircleIcon,
@@ -33,6 +34,12 @@ export default function HealthPage() {
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
+    const cached = getSessionCache<HealthData>("adminHealthCache");
+    if (cached) {
+      setHealth(cached);
+      setLoading(false);
+      return;
+    }
     fetchHealth();
   }, []);
 
@@ -51,6 +58,7 @@ export default function HealthPage() {
 
       const data = await res.json();
       setHealth(data);
+      setSessionCache<HealthData>("adminHealthCache", data);
     } catch (err) {
       console.error(err);
     } finally {

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { Toast } from "@/components/admin/Toast";
+import { getSessionCache, setSessionCache } from "@/lib/admin-session-cache";
 import {
   CheckCircleIcon,
   BanIcon,
@@ -77,6 +78,15 @@ function safeNumber(value: unknown, fallback: number = 0): number {
   return fallback;
 }
 
+interface UsersCacheData {
+  users: User[];
+  pagination: PaginationData;
+  search: string;
+  statusFilter: string;
+  sort: string;
+  order: string;
+}
+
 export default function UsersPage() {
   const searchParams = useSearchParams();
   const [users, setUsers] = useState<User[]>([]);
@@ -135,7 +145,28 @@ export default function UsersPage() {
   const [executionsLoading, setExecutionsLoading] = useState(false);
   const [expandedExecutionId, setExpandedExecutionId] = useState<string | null>(null);
 
+  const lastLoadedKeyRef = useRef<string | null>(null);
+
   useEffect(() => {
+    const requestKey = `${search}|${statusFilter}|${sort}|${order}|${pagination.page}`;
+    const cached = getSessionCache<UsersCacheData>("adminUsersCache");
+
+    if (cached && lastLoadedKeyRef.current === null) {
+      const cachedKey = `${cached.search}|${cached.statusFilter}|${cached.sort}|${cached.order}|${cached.pagination.page}`;
+      setUsers(cached.users);
+      setPagination(cached.pagination);
+      setSearch(cached.search);
+      setStatusFilter(cached.statusFilter);
+      setSort(cached.sort);
+      setOrder(cached.order);
+      setLoading(false);
+      lastLoadedKeyRef.current = cachedKey;
+      return;
+    }
+
+    if (requestKey === lastLoadedKeyRef.current) return;
+
+    lastLoadedKeyRef.current = requestKey;
     fetchUsers();
   }, [search, statusFilter, sort, order, pagination.page]);
 
@@ -162,8 +193,18 @@ export default function UsersPage() {
       if (!res.ok) throw new Error("Failed to fetch users");
 
       const data = await res.json();
-      setUsers(data.users || []);
-      setPagination(data.pagination || { page: 1, limit: 20, total: 0, totalPages: 0 });
+      const nextUsers = data.users || [];
+      const nextPagination = data.pagination || { page: 1, limit: 20, total: 0, totalPages: 0 };
+      setUsers(nextUsers);
+      setPagination(nextPagination);
+      setSessionCache<UsersCacheData>("adminUsersCache", {
+        users: nextUsers,
+        pagination: nextPagination,
+        search,
+        statusFilter,
+        sort,
+        order,
+      });
     } catch (err) {
       setToast({
         message: err instanceof Error ? err.message : "Failed to load users",
