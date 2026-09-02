@@ -40,9 +40,12 @@ export const metadata: Metadata = {
     "job scheduler",
     "cron job saas",
     "self-hosted cron",
+    "abhi gandhi",
+    "abhi gandhi developer",
+    "built by abhi gandhi",
   ],
-  authors: [{ name: SITE_NAME }],
-  creator: SITE_NAME,
+  authors: [{ name: "Abhi Gandhi", url: SITE_URL }],
+  creator: "Abhi Gandhi",
   publisher: SITE_NAME,
   category: "Developer Tools",
   formatDetection: { email: false, address: false, telephone: false },
@@ -131,7 +134,16 @@ const structuredData = {
       operatingSystem: "Web",
       description:
         "Free online cron job scheduler, API tester and webhook monitor. Schedule HTTP cron jobs, verify responses and monitor uptime.",
+      author: { "@type": "Person", name: "Abhi Gandhi", url: SITE_URL },
+      creator: { "@type": "Person", name: "Abhi Gandhi", url: SITE_URL },
       offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+    },
+    {
+      "@type": "Person",
+      name: "Abhi Gandhi",
+      url: SITE_URL,
+      description:
+        "Developer and creator of CronJob.site (cronjobs.site), a free online cron job scheduler.",
     },
   ],
 };
@@ -148,6 +160,7 @@ export default function RootLayout({
           name="google-site-verification"
           content="DBhmTd_4mP-WuudhZQY3IdCmE8cioysxJUbsBPxxkSM"
         />
+        <meta name="author" content="Abhi Gandhi" />
         <meta name="google" content="nositelinkssearchbox" />
         <script
           type="application/ld+json"

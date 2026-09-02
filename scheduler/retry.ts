@@ -22,6 +22,24 @@ export interface RetryConfig {
   expectedResponseRegex?: string | null;
 }
 
+const MAX_EXECUTION_LOGS = 20;
+
+async function pruneExecutionLogs(jobId: string): Promise<void> {
+  try {
+    const keep = await JobExecutionModel.find({ jobId })
+      .sort({ startedAt: -1 })
+      .limit(MAX_EXECUTION_LOGS)
+      .select("_id")
+      .lean();
+    if (keep.length >= MAX_EXECUTION_LOGS) {
+      const keepIds = keep.map((e) => e._id);
+      await JobExecutionModel.deleteMany({ jobId, _id: { $nin: keepIds } });
+    }
+  } catch (error) {
+    logger.error("retry", "Failed to prune execution logs for job " + jobId, error);
+  }
+}
+
 export async function executeWithRetry(
   config: RetryConfig
 ): Promise<ExecutionResult> {
@@ -93,6 +111,7 @@ export async function executeWithRetry(
     lastResult = result;
 
     if (result.status === "SUCCESS") {
+      await pruneExecutionLogs(config.jobId);
       return result;
     }
 
@@ -104,5 +123,6 @@ export async function executeWithRetry(
     }
   }
 
+  await pruneExecutionLogs(config.jobId);
   return lastResult!;
 }

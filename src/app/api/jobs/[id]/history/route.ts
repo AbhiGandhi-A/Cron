@@ -5,6 +5,8 @@ import connectDb from "@/lib/mongodb";
 import { CronJob, JobExecution } from "@/lib/models";
 import { enforceRateLimit, getAuthenticatedIdentifier, logError, validateObjectId, validatePaginationParams } from "@/lib/security";
 
+const MAX_KEEP_EXECUTIONS = 20;
+
 async function getUserId(): Promise<string | null> {
   const session = await getServerSession(authOptions);
   if (!session?.user) return null;
@@ -72,6 +74,16 @@ export async function GET(
         .lean(),
       JobExecution.countDocuments(query),
     ]);
+
+    if (total > MAX_KEEP_EXECUTIONS) {
+      const keep = await JobExecution.find({ jobId: id })
+        .sort({ startedAt: -1 })
+        .limit(MAX_KEEP_EXECUTIONS)
+        .select("_id")
+        .lean();
+      const keepIds = keep.map((exec) => exec._id);
+      await JobExecution.deleteMany({ jobId: id, _id: { $nin: keepIds } });
+    }
 
     return NextResponse.json({
       executions: executions.map((exec) => ({
