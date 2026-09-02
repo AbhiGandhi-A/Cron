@@ -4,6 +4,15 @@ import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { ReactNode } from "react";
+import {
+  ZapIcon,
+  DashboardIcon,
+  UsersIcon,
+  MailIcon,
+  ActivityIcon,
+  HealthIcon,
+  SettingsIcon,
+} from "@/components/admin/AdminIcons";
 
 interface LayoutProps {
   children: ReactNode;
@@ -88,12 +97,12 @@ export default function AdminLayout({ children }: LayoutProps) {
   }
 
   const navItems = [
-    { label: "Dashboard", href: "/admin", icon: "📊" },
-    { label: "Users", href: "/admin/users", icon: "👥" },
-    { label: "Temp Mail", href: "/admin/temp-mail", icon: "📧" },
-    { label: "Activity Log", href: "/admin/activity", icon: "📋" },
-    { label: "System Health", href: "/admin/health", icon: "❤️" },
-    { label: "Settings", href: "/admin/settings", icon: "⚙️" },
+    { label: "Dashboard", href: "/admin", Icon: DashboardIcon },
+    { label: "Users", href: "/admin/users", Icon: UsersIcon },
+    { label: "Temp Mail", href: "/admin/temp-mail", Icon: MailIcon },
+    { label: "Activity Log", href: "/admin/activity", Icon: ActivityIcon },
+    { label: "System Health", href: "/admin/health", Icon: HealthIcon },
+    { label: "Settings", href: "/admin/settings", Icon: SettingsIcon },
   ];
 
   const currentNav = navItems.find((n) => n.href === pathname)?.label || "Admin";
@@ -110,7 +119,7 @@ export default function AdminLayout({ children }: LayoutProps) {
         <div className="h-16 px-5 border-b border-slate-200 flex items-center justify-between">
           <Link href="/admin" className="flex items-center gap-2.5 overflow-hidden">
             <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-lg shadow-sm shrink-0">
-              ⚡
+              <ZapIcon className="w-5 h-5" />
             </div>
             {sidebarOpen && (
               <div className="truncate">
@@ -125,6 +134,7 @@ export default function AdminLayout({ children }: LayoutProps) {
         <nav className="flex-1 p-3 space-y-1.5 overflow-y-auto">
           {navItems.map((item) => {
             const isActive = pathname === item.href;
+            const Icon = item.Icon;
             return (
               <Link
                 key={item.href}
@@ -135,7 +145,7 @@ export default function AdminLayout({ children }: LayoutProps) {
                     : "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900"
                 }`}
               >
-                <span className="text-lg shrink-0">{item.icon}</span>
+                <Icon className="w-5 h-5 shrink-0" />
                 {sidebarOpen && <span className="truncate">{item.label}</span>}
               </Link>
             );
