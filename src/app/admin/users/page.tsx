@@ -26,6 +26,40 @@ interface PaginationData {
   totalPages: number;
 }
 
+interface AdminJob {
+  _id: string;
+  name: string;
+  url: string;
+  method: string;
+  schedule: string;
+  timezone?: string;
+  isActive: boolean;
+  lastRunAt?: string | null;
+  nextRunAt?: string | null;
+  createdAt: string;
+  totalExecutions: number;
+}
+
+interface JobExecutionItem {
+  id: string;
+  status: string;
+  httpStatus: number | null;
+  responseTime: number | null;
+  errorMessage: string | null;
+  retryNumber: number;
+  startedAt: string;
+  completedAt: string | null;
+  requestUrl: string;
+  requestMethod: string;
+  requestBody: unknown;
+  requestHeaders: Record<string, string> | null;
+  queryParams: Record<string, string> | null;
+  responseBody: string | null;
+  responseHeaders: Record<string, string> | null;
+  responseSize: number;
+  triggeredBy: string;
+}
+
 function safeNumber(value: unknown, fallback: number = 0): number {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim() !== "") {
@@ -58,7 +92,11 @@ export default function UsersPage() {
 
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [userDetails, setUserDetails] = useState<{
-    jobs?: { total: number; totalExecutions: number };
+    jobs?: {
+      total: number;
+      totalExecutions: number;
+      list?: AdminJob[];
+    };
     tempMail?: { enabled: boolean; mailboxes: number; emails: number };
   } | null>(null);
   const [editForm, setEditForm] = useState<{
@@ -78,6 +116,16 @@ export default function UsersPage() {
   });
   const [actionLoading, setActionLoading] = useState(false);
   const [modalLoading, setModalLoading] = useState(false);
+  const [selectedJob, setSelectedJob] = useState<AdminJob | null>(null);
+  const [executions, setExecutions] = useState<JobExecutionItem[]>([]);
+  const [executionsPagination, setExecutionsPagination] = useState<PaginationData>({
+    page: 1,
+    limit: 10,
+    total: 0,
+    totalPages: 0,
+  });
+  const [executionsLoading, setExecutionsLoading] = useState(false);
+  const [expandedExecutionId, setExpandedExecutionId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchUsers();
@@ -288,6 +336,166 @@ export default function UsersPage() {
       });
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const reloadJobList = async () => {
+    if (!selectedUser) return;
+    try {
+      const token = localStorage.getItem("adminAuthToken");
+      if (!token) return;
+      const res = await fetch(`/api/admin/users/${selectedUser._id}`, {
+        headers: { Authorization: token },
+        cache: "no-store",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setUserDetails((prev) => ({
+          ...(prev || {}),
+          jobs: data.jobs,
+          tempMail: data.tempMail,
+        }));
+      }
+    } catch {
+      // Graceful fallback - keep current list
+    }
+  };
+
+  const toggleJob = async (job: AdminJob) => {
+    try {
+      setActionLoading(true);
+      const token = localStorage.getItem("adminAuthToken");
+      if (!token) return;
+
+      const res = await fetch(`/api/admin/jobs/${job._id}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: token,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ isActive: !job.isActive }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Failed to update cron job");
+      }
+
+      const data = await res.json();
+      setToast({
+        message: data.message || "Cron job updated successfully",
+        type: "success",
+      });
+      await reloadJobList();
+    } catch (err) {
+      setToast({
+        message: err instanceof Error ? err.message : "Cron job update failed",
+        type: "error",
+      });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const deleteJob = async (job: AdminJob) => {
+    if (
+      !confirm(
+        `Are you sure you want to delete cron job "${job.name}" and all its execution logs?`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      const token = localStorage.getItem("adminAuthToken");
+      if (!token) return;
+
+      const res = await fetch(`/api/admin/jobs/${job._id}`, {
+        method: "DELETE",
+        headers: { Authorization: token },
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Delete failed");
+      }
+
+      const data = await res.json();
+      setToast({
+        message: data.message || "Cron job deleted successfully",
+        type: "success",
+      });
+      if (selectedJob && selectedJob._id === job._id) setSelectedJob(null);
+      await reloadJobList();
+    } catch (err) {
+      setToast({
+        message: err instanceof Error ? err.message : "Delete failed",
+        type: "error",
+      });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const openJobExecutions = async (job: AdminJob) => {
+    setSelectedJob(job);
+    setExpandedExecutionId(null);
+    setExecutions([]);
+    setExecutionsLoading(true);
+    try {
+      const token = localStorage.getItem("adminAuthToken");
+      if (!token) return;
+
+      const res = await fetch(`/api/admin/jobs/${job._id}/executions?page=1&limit=10`, {
+        headers: { Authorization: token },
+        cache: "no-store",
+      });
+
+      if (!res.ok) throw new Error("Failed to fetch execution logs");
+
+      const data = await res.json();
+      setExecutions(data.executions || []);
+      setExecutionsPagination(
+        data.pagination || { page: 1, limit: 10, total: 0, totalPages: 0 }
+      );
+    } catch (err) {
+      setToast({
+        message: err instanceof Error ? err.message : "Failed to load execution logs",
+        type: "error",
+      });
+    } finally {
+      setExecutionsLoading(false);
+    }
+  };
+
+  const loadMoreExecutions = async () => {
+    if (!selectedJob) return;
+    const nextPage = executionsPagination.page + 1;
+    try {
+      const token = localStorage.getItem("adminAuthToken");
+      if (!token) return;
+
+      const res = await fetch(
+        `/api/admin/jobs/${selectedJob._id}/executions?page=${nextPage}&limit=10`,
+        {
+          headers: { Authorization: token },
+          cache: "no-store",
+        }
+      );
+
+      if (!res.ok) throw new Error("Failed to fetch execution logs");
+
+      const data = await res.json();
+      setExecutions((prev) => [...prev, ...(data.executions || [])]);
+      setExecutionsPagination(
+        data.pagination || { page: nextPage, limit: 10, total: 0, totalPages: 0 }
+      );
+    } catch (err) {
+      setToast({
+        message: err instanceof Error ? err.message : "Failed to load execution logs",
+        type: "error",
+      });
     }
   };
 
@@ -579,6 +787,107 @@ export default function UsersPage() {
               )}
             </div>
 
+            {/* Cron Jobs */}
+            <div className="pt-2 border-t border-slate-100">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">
+                  Cron Jobs ({userDetails?.jobs?.total ?? 0})
+                </h4>
+                <span className="text-[10px] text-slate-400">
+                  Click a job to view execution logs
+                </span>
+              </div>
+
+              {modalLoading ? (
+                <div className="py-4 text-center text-xs text-slate-400">
+                  Loading cron jobs...
+                </div>
+              ) : !userDetails?.jobs?.list || userDetails.jobs.list.length === 0 ? (
+                <div className="py-4 text-center text-xs text-slate-400">
+                  No cron jobs for this user.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {userDetails.jobs.list.map((job) => (
+                    <div
+                      key={job._id}
+                      className="rounded-xl border border-slate-200 bg-slate-50 p-3"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => openJobExecutions(job)}
+                        className="w-full text-left"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="font-bold text-slate-900 text-xs truncate">
+                              {job.name}
+                            </div>
+                            <div className="text-[10px] text-slate-500 font-mono truncate mt-0.5">
+                              {job.url}
+                            </div>
+                          </div>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border shrink-0 ${
+                              job.isActive
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : "bg-slate-100 text-slate-500 border-slate-200"
+                            }`}
+                          >
+                            {job.isActive ? "Active" : "Disabled"}
+                          </span>
+                        </div>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">
+                          <span className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-mono">
+                            {job.method}
+                          </span>
+                          <span className="font-mono">{job.schedule}</span>
+                          <span className="text-slate-400">
+                            {job.totalExecutions} executions
+                          </span>
+                          {job.lastRunAt && (
+                            <span className="text-slate-400">
+                              Last run: {new Date(job.lastRunAt).toLocaleString()}
+                            </span>
+                          )}
+                        </div>
+                      </button>
+
+                      <div className="mt-2 flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleJob(job)}
+                          disabled={actionLoading}
+                          className={`flex-1 py-1.5 px-3 rounded-lg text-[11px] font-semibold transition disabled:opacity-50 cursor-pointer border ${
+                            job.isActive
+                              ? "bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100"
+                              : "bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100"
+                          }`}
+                        >
+                          {job.isActive ? "Turn Off" : "Turn On"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openJobExecutions(job)}
+                          className="py-1.5 px-3 rounded-lg text-[11px] font-semibold transition cursor-pointer border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                        >
+                          View Logs
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteJob(job)}
+                          disabled={actionLoading}
+                          className="py-1.5 px-3 rounded-lg text-[11px] font-semibold transition disabled:opacity-50 cursor-pointer border border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Edit User Quotas & Settings Form */}
             <form onSubmit={handleSaveUser} className="space-y-4 pt-2 border-t border-slate-100">
               <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">Plan & Quotas Configuration</h4>
@@ -669,6 +978,193 @@ export default function UsersPage() {
           type={toast.type}
           onClose={() => setToast(null)}
         />
+      )}
+
+      {/* Cron Job Execution Logs Modal */}
+      {selectedJob && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-[60] overflow-y-auto">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-2xl w-full p-6 space-y-4 my-8 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-start border-b border-slate-100 pb-3">
+              <div className="min-w-0">
+                <h3 className="text-lg font-bold text-slate-900 truncate">
+                  {selectedJob.name}
+                </h3>
+                <p className="text-xs text-slate-500 font-mono truncate mt-0.5">
+                  {selectedJob.url}
+                </p>
+                <span
+                  className={`inline-block mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                    selectedJob.isActive
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      : "bg-slate-100 text-slate-500 border-slate-200"
+                  }`}
+                >
+                  {selectedJob.isActive ? "Active" : "Disabled"}
+                </span>
+              </div>
+              <button
+                onClick={() => setSelectedJob(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-base font-bold transition"
+              >
+                ✕
+              </button>
+            </div>
+
+            {executionsLoading ? (
+              <div className="py-10 text-center text-xs text-slate-500 flex flex-col items-center gap-2">
+                <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                Loading execution logs...
+              </div>
+            ) : executions.length === 0 ? (
+              <div className="py-10 text-center text-xs text-slate-400">
+                No executions recorded for this cron job.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {executions.map((exec) => {
+                  const isOpen = expandedExecutionId === exec.id;
+                  const detailRows: { label: string; value: string }[] = [];
+                  detailRows.push({ label: "Request", value: `${exec.requestMethod} ${exec.requestUrl}` });
+                  if (exec.httpStatus != null) detailRows.push({ label: "HTTP Status", value: String(exec.httpStatus) });
+                  if (exec.responseTime != null) detailRows.push({ label: "Response Time", value: `${exec.responseTime} ms` });
+                  if (exec.responseSize != null && exec.responseSize > 0) detailRows.push({ label: "Response Size", value: `${exec.responseSize} bytes` });
+                  if (exec.retryNumber > 0) detailRows.push({ label: "Retry", value: `Attempt ${exec.retryNumber}` });
+                  if (exec.triggeredBy) detailRows.push({ label: "Triggered By", value: exec.triggeredBy });
+                  if (exec.completedAt) detailRows.push({ label: "Completed", value: new Date(exec.completedAt).toLocaleString() });
+                  if (exec.errorMessage) detailRows.push({ label: "Error", value: exec.errorMessage });
+
+                  return (
+                    <div
+                      key={exec.id}
+                      className="rounded-xl border border-slate-200 bg-slate-50 overflow-hidden"
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedExecutionId(isOpen ? null : exec.id)
+                        }
+                        className="w-full text-left px-3.5 py-2.5 flex items-center justify-between gap-2 hover:bg-slate-100/80 transition"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border shrink-0 ${
+                              exec.status === "SUCCESS"
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : exec.status === "FAILED" || exec.status === "TIMEOUT"
+                                ? "bg-red-50 text-red-700 border-red-200"
+                                : exec.status === "RUNNING"
+                                ? "bg-blue-50 text-blue-700 border-blue-200"
+                                : exec.status === "RETRY"
+                                ? "bg-amber-50 text-amber-700 border-amber-200"
+                                : "bg-slate-100 text-slate-600 border-slate-200"
+                            }`}
+                          >
+                            {exec.status}
+                          </span>
+                          <span className="text-[11px] font-mono text-slate-700 truncate">
+                            {new Date(exec.startedAt).toLocaleString()}
+                          </span>
+                          {exec.httpStatus != null && (
+                            <span className="text-[10px] text-slate-500 shrink-0">
+                              HTTP {exec.httpStatus}
+                            </span>
+                          )}
+                          {exec.responseTime != null && (
+                            <span className="text-[10px] text-slate-500 shrink-0">
+                              {exec.responseTime} ms
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-slate-400 text-xs shrink-0">
+                          {isOpen ? "−" : "+"}
+                        </span>
+                      </button>
+
+                      {isOpen && (
+                        <div className="px-3.5 pb-3.5 space-y-2.5 text-[11px] border-t border-slate-200 pt-2.5">
+                          <div className="space-y-1.5">
+                            {detailRows.map((row) => (
+                              <div key={row.label} className="flex gap-2">
+                                <span className="text-slate-400 w-28 shrink-0">
+                                  {row.label}
+                                </span>
+                                <span className="text-slate-800 font-mono break-all">
+                                  {row.value}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+
+                          {exec.queryParams && Object.keys(exec.queryParams).length > 0 && (
+                            <div>
+                              <div className="text-slate-400 mb-0.5">Query Params</div>
+                              <pre className="bg-white border border-slate-200 rounded-lg p-2 overflow-x-auto text-[10px] text-slate-800 whitespace-pre-wrap break-all">
+                                {JSON.stringify(exec.queryParams, null, 2)}
+                              </pre>
+                            </div>
+                          )}
+
+                          {exec.requestHeaders && Object.keys(exec.requestHeaders).length > 0 && (
+                            <div>
+                              <div className="text-slate-400 mb-0.5">Request Headers</div>
+                              <pre className="bg-white border border-slate-200 rounded-lg p-2 overflow-x-auto text-[10px] text-slate-800 whitespace-pre-wrap break-all">
+                                {JSON.stringify(exec.requestHeaders, null, 2)}
+                              </pre>
+                            </div>
+                          )}
+
+                          {exec.requestBody !== null && exec.requestBody !== undefined && (
+                            <div>
+                              <div className="text-slate-400 mb-0.5">Request Body</div>
+                              <pre className="bg-white border border-slate-200 rounded-lg p-2 overflow-x-auto text-[10px] text-slate-800 whitespace-pre-wrap break-all">
+                                {typeof exec.requestBody === "string"
+                                  ? exec.requestBody
+                                  : JSON.stringify(exec.requestBody, null, 2)}
+                              </pre>
+                            </div>
+                          )}
+
+                          {exec.responseHeaders && Object.keys(exec.responseHeaders).length > 0 && (
+                            <div>
+                              <div className="text-slate-400 mb-0.5">Response Headers</div>
+                              <pre className="bg-white border border-slate-200 rounded-lg p-2 overflow-x-auto text-[10px] text-slate-800 whitespace-pre-wrap break-all">
+                                {JSON.stringify(exec.responseHeaders, null, 2)}
+                              </pre>
+                            </div>
+                          )}
+
+                          {exec.responseBody ? (
+                            <div>
+                              <div className="text-slate-400 mb-0.5">Response Body</div>
+                              <pre className="bg-white border border-slate-200 rounded-lg p-2 max-h-56 overflow-y-auto text-[10px] text-slate-800 whitespace-pre-wrap break-all">
+                                {exec.responseBody}
+                              </pre>
+                            </div>
+                          ) : (
+                            <div className="text-slate-400">
+                              No response body recorded.
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {executionsPagination.totalPages > executionsPagination.page && (
+              <button
+                type="button"
+                onClick={loadMoreExecutions}
+                disabled={executionsLoading}
+                className="w-full py-2 px-4 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition font-semibold text-xs disabled:opacity-50 cursor-pointer"
+              >
+                Load More Logs
+              </button>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

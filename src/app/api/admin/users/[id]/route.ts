@@ -39,10 +39,36 @@ export async function GET(
     const tempMail = await getUserTempMailStats(user._id.toString());
 
     // Get job stats
-    const jobCount = await CronJob.countDocuments({ userId: user._id });
+    const jobs = await CronJob.find({ userId: user._id })
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .lean();
+    const jobIds = jobs.map((j) => j._id);
     const executionCount = await JobExecution.countDocuments({
-      jobId: { $in: await CronJob.distinct("_id", { userId: user._id }) },
+      jobId: { $in: jobIds },
     });
+
+    const executionCounts = jobIds.length > 0
+      ? await JobExecution.aggregate<{ _id: mongoose.Types.ObjectId; count: number }>([
+          { $match: { jobId: { $in: jobIds } } },
+          { $group: { _id: "$jobId", count: { $sum: 1 } } },
+        ])
+      : [];
+    const countMap = new Map(executionCounts.map((c) => [c._id.toString(), c.count]));
+
+    const jobList = jobs.map((job) => ({
+      _id: job._id.toString(),
+      name: job.name,
+      url: job.url,
+      method: job.method,
+      schedule: job.schedule,
+      timezone: job.timezone,
+      isActive: job.isActive,
+      lastRunAt: job.lastRunAt,
+      nextRunAt: job.nextRunAt,
+      createdAt: job.createdAt,
+      totalExecutions: countMap.get(job._id.toString()) || 0,
+    }));
 
     // Get activity
     const recentActivity = await AdminAuditLog.find({
@@ -60,8 +86,9 @@ export async function GET(
         emails: tempMail.emails,
       },
       jobs: {
-        total: jobCount,
+        total: jobList.length,
         totalExecutions: executionCount,
+        list: jobList,
       },
       activity: recentActivity,
     });
