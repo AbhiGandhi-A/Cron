@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import connectDb from "@/lib/mongodb";
-import { CronJob, JobExecution } from "@/lib/models";
+import { CronJob, JobExecution, User } from "@/lib/models";
 import { enforceRateLimit, getAuthenticatedIdentifier, logError, validateObjectId, validatePaginationParams } from "@/lib/security";
 
 const MAX_KEEP_EXECUTIONS = 20;
@@ -74,6 +74,21 @@ export async function GET(
         .lean(),
       JobExecution.countDocuments(query),
     ]);
+
+    if ((job.totalRuns ?? 0) === 0 && total > 0) {
+      const legacySuccess = await JobExecution.countDocuments({
+        jobId: id,
+        status: "SUCCESS",
+      });
+      await CronJob.updateOne(
+        { _id: id, totalRuns: 0 },
+        { $set: { totalRuns: total, successfulRuns: legacySuccess } }
+      );
+      await User.updateOne(
+        { _id: job.userId, totalRuns: 0 },
+        { $set: { totalRuns: total, successfulRuns: legacySuccess } }
+      );
+    }
 
     if (total > MAX_KEEP_EXECUTIONS) {
       const keep = await JobExecution.find({ jobId: id })

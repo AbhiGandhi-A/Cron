@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import connectDb from "@/lib/mongodb";
-import { CronJob, JobExecution } from "@/lib/models";
+import { CronJob, JobExecution, User } from "@/lib/models";
 import { enforceRateLimit, getAuthenticatedIdentifier, logError, validateObjectId } from "@/lib/security";
 
 async function getUserId(): Promise<string | null> {
@@ -77,6 +77,10 @@ export async function GET(
         const legacySuccess = await JobExecution.countDocuments({ jobId: id, status: "SUCCESS" });
         await CronJob.updateOne(
           { _id: job._id, totalRuns: 0 },
+          { $set: { totalRuns: legacyTotal, successfulRuns: legacySuccess } }
+        );
+        await User.updateOne(
+          { _id: userId, totalRuns: 0 },
           { $set: { totalRuns: legacyTotal, successfulRuns: legacySuccess } }
         );
         totalFinished = legacyTotal;
