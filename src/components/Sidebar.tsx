@@ -182,7 +182,10 @@ export default function Sidebar() {
             </div>
           </div>
           <button
-            onClick={() => signOut({ callbackUrl: "/auth/login" })}
+            onClick={async () => {
+              await signOut({ redirect: false });
+              window.location.href = window.location.origin + "/auth/login";
+            }}
             className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-400 hover:bg-white/5 hover:text-white rounded-lg transition-colors"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
