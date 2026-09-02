@@ -261,9 +261,12 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
 
   // 2. Query Workers Usage & Analytics (GraphQL)
   const now = new Date();
-  const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  const startIso = oneDayAgo.toISOString();
-  const endIso = now.toISOString();
+  const startUtc = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  );
+  const endUtc = new Date(startUtc.getTime() + 24 * 60 * 60 * 1000);
+  const startIso = startUtc.toISOString();
+  const endIso = endUtc.toISOString();
 
   const workerQuery = `query GetWorkerAnalytics($accountTag: string!, $datetimeStart: string!, $datetimeEnd: string!) {
     viewer {
@@ -411,7 +414,7 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
       category: "workers",
       usage: totalWorkerRequests,
       limit: workerRequestsLimit,
-      resetPeriod: "Last 24 Hours",
+      resetPeriod: "Resets Daily (UTC)",
       unit: "requests",
       source: "Cloudflare GraphQL: workersInvocationsAdaptive.sum.requests",
       description: "Total worker invocations processed across your account in the last 24 hours.",
@@ -428,7 +431,7 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
         category: "workers",
         usage: totalWorkerErrors,
         limit: null,
-        resetPeriod: "Last 24 Hours",
+        resetPeriod: "Resets Daily (UTC)",
         unit: "errors",
         source: "Cloudflare GraphQL: workersInvocationsAdaptive.sum.errors",
         description: "Invocations that resulted in an uncaught runtime exception.",
@@ -452,7 +455,7 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
         category: "workers",
         usage: totalWorkerSubrequests,
         limit: workerSubrequestsLimit,
-        resetPeriod: "Last 24 Hours",
+        resetPeriod: "Resets Daily (UTC)",
         unit: "subrequests",
         source: "Cloudflare GraphQL: workersInvocationsAdaptive.sum.subrequests",
         description: "Outbound fetch calls made by your workers in the last 24 hours.",
@@ -614,7 +617,7 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
         category: "d1",
         usage: d1RowsRead,
         limit: d1RowsReadLimit,
-        resetPeriod: "Last 24 Hours",
+        resetPeriod: "Resets Daily (UTC)",
         unit: "rows",
         source: "Cloudflare GraphQL: d1AnalyticsAdaptiveGroups.sum.rowsRead",
         description: "Total rows read across queries in the last 24 hours.",
@@ -630,7 +633,7 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
         category: "d1",
         usage: d1RowsWritten,
         limit: d1RowsWrittenLimit,
-        resetPeriod: "Last 24 Hours",
+        resetPeriod: "Resets Daily (UTC)",
         unit: "rows",
         source: "Cloudflare GraphQL: d1AnalyticsAdaptiveGroups.sum.rowsWritten",
         description: "Total rows inserted, updated, or deleted in the last 24 hours.",
@@ -640,8 +643,8 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
 
   // 5. Query Zone Analytics (GraphQL)
   if (zoneId) {
-    const dateStart = startIso.split("T")[0];
-    const dateEnd = endIso.split("T")[0];
+    const dateStart = startUtc.toISOString().split("T")[0];
+    const dateEnd = now.toISOString().split("T")[0];
 
     const zoneAnalyticsQuery = `query GetZoneAnalytics($zoneTag: string!, $dateStart: string!, $dateEnd: string!) {
       viewer {
@@ -727,7 +730,7 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
         category: "zone",
         usage: zoneRequests,
         limit: zoneRequestsLimit,
-        resetPeriod: "Last 24 Hours",
+        resetPeriod: "Resets Daily (UTC)",
         unit: "requests",
         source: "Cloudflare GraphQL: httpRequests1dGroups.sum.requests",
         description: `Inbound HTTP traffic delivered to zone ${zoneRef?.name || zoneId}.`,
@@ -743,7 +746,7 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
           category: "zone",
           usage: zoneBandwidth,
           limit: zoneBandwidthLimit,
-          resetPeriod: "Last 24 Hours",
+          resetPeriod: "Resets Daily (UTC)",
           unit: "bytes",
           source: "Cloudflare GraphQL: httpRequests1dGroups.sum.bytes",
           description: "Total bytes transferred via Cloudflare CDN in the last 24 hours.",
@@ -761,7 +764,7 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
           category: "zone",
           usage: zoneCachedRequests,
           limit: cacheTarget,
-          resetPeriod: "Last 24 Hours",
+          resetPeriod: "Resets Daily (UTC)",
           unit: "requests",
           source: "Cloudflare GraphQL: httpRequests1dGroups.sum.cachedRequests",
           description: "Edge-cached requests served without origin roundtrip.",
