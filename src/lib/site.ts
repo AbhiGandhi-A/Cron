@@ -1,4 +1,4 @@
-export const SITE_NAME = process.env.NEXT_PUBLIC_APP_NAME || "Cron Job Free";
+export const SITE_NAME = process.env.NEXT_PUBLIC_APP_NAME || "CronJob.site";
 
 export const PROD_URL = "https://cronjobs.site";
 

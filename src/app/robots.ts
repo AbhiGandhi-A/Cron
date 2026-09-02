@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
-import { getSiteUrl } from "@/lib/site";
+import { PROD_URL } from "@/lib/site";
 
-const SITE_URL = getSiteUrl();
+const SITE_URL = PROD_URL;
 
 export default function robots(): MetadataRoute.Robots {
   return {
@@ -20,5 +20,6 @@ export default function robots(): MetadataRoute.Robots {
       ],
     },
     sitemap: `${SITE_URL}/sitemap.xml`,
+    host: SITE_URL,
   };
 }

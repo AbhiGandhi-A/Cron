@@ -1,32 +1,44 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from "./providers";
-import { SITE_NAME, getSiteUrl } from "@/lib/site";
+import { SITE_NAME, PROD_URL } from "@/lib/site";
 
 const BRAND_COLOR = "#2563eb";
-const SITE_URL = getSiteUrl();
+const SITE_URL = PROD_URL;
+
+const TITLE = `${SITE_NAME} - Free Online Cron Job Scheduler, API Tester and Webhook Monitor`;
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: `${SITE_NAME} - Cron Job Scheduler, API Tester and Webhook Monitoring`,
+    default: TITLE,
     template: `%s | ${SITE_NAME}`,
   },
   description:
-    "Cron Job Free is a self-hosted cron job scheduler with an API tester, webhook test URLs, AI dev assistant and job monitoring. Create, schedule, verify and debug HTTP cron jobs from one dashboard.",
+    "Cron jobs, cronjobs, cronjob free — schedule HTTP cron jobs online free with CronJob.site. Create, run and monitor cron jobs, webhook test URLs, API tests and uptime checks from one dashboard.",
   applicationName: SITE_NAME,
   generator: "Next.js",
   referrer: "strict-origin-when-cross-origin",
   keywords: [
+    "cron",
+    "cron jobs",
+    "cronjobs",
+    "cronjob",
     "cron job",
-    "cron scheduler",
+    "cron job free",
+    "cronjobfree",
     "cron job scheduler",
+    "cron scheduler",
+    "free cron job",
+    "online cron job",
+    "free cron scheduler",
     "scheduled tasks",
     "webhook tester",
+    "webhook monitor",
     "api tester",
     "cron monitoring",
     "job scheduler",
-    "cron job SaaS",
+    "cron job saas",
     "self-hosted cron",
   ],
   authors: [{ name: SITE_NAME }],
@@ -50,9 +62,9 @@ export const metadata: Metadata = {
     type: "website",
     url: SITE_URL,
     siteName: SITE_NAME,
-    title: `${SITE_NAME} - Cron Job Scheduler, API Tester and Webhook Monitoring`,
+    title: TITLE,
     description:
-      "Cron Job Free is a self-hosted cron job scheduler with an API tester, webhook test URLs, AI dev assistant and job monitoring. Create, schedule, verify and debug HTTP cron jobs from one dashboard.",
+      "Schedule free online cron jobs with CronJob.site. Cron job scheduler, API tester, webhook monitoring and uptime checks in one dashboard.",
     images: [
       {
         url: "/opengraph-image.png",
@@ -65,9 +77,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: `${SITE_NAME} - Cron Job Scheduler, API Tester and Webhook Monitoring`,
+    title: TITLE,
     description:
-      "Cron Job Free is a self-hosted cron job scheduler with an API tester, webhook test URLs, AI dev assistant and job monitoring. Create, schedule, verify and debug HTTP cron jobs from one dashboard.",
+      "Free online cron job scheduler and monitoring. Schedule cron jobs, test APIs and monitor webhooks with CronJob.site.",
     images: ["/opengraph-image.png"],
   },
   icons: {
@@ -90,6 +102,40 @@ export const metadata: Metadata = {
   },
 };
 
+const structuredData = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      name: SITE_NAME,
+      url: SITE_URL,
+      logo: `${SITE_URL}/icon.svg`,
+      sameAs: [SITE_URL],
+    },
+    {
+      "@type": "WebSite",
+      name: SITE_NAME,
+      alternateName: "cronjobs.site",
+      url: SITE_URL,
+      potentialAction: {
+        "@type": "SearchAction",
+        target: `${SITE_URL}/auth/register`,
+        "query-input": "required name=search_term_string",
+      },
+    },
+    {
+      "@type": "SoftwareApplication",
+      name: SITE_NAME,
+      url: SITE_URL,
+      applicationCategory: "DeveloperApplication",
+      operatingSystem: "Web",
+      description:
+        "Free online cron job scheduler, API tester and webhook monitor. Schedule HTTP cron jobs, verify responses and monitor uptime.",
+      offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+    },
+  ],
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -101,6 +147,11 @@ export default function RootLayout({
         <meta
           name="google-site-verification"
           content="DBhmTd_4mP-WuudhZQY3IdCmE8cioysxJUbsBPxxkSM"
+        />
+        <meta name="google" content="nositelinkssearchbox" />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
         />
       </head>
       <body className="antialiased">

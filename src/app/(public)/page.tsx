@@ -1,18 +1,27 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { SITE_NAME, getSiteUrl } from "@/lib/site";
+import { SITE_NAME, PROD_URL } from "@/lib/site";
 
-const SITE_URL = getSiteUrl();
+const SITE_URL = PROD_URL;
 
 export const metadata: Metadata = {
-  title: "Cron Job Scheduler, API Tester and Webhook Monitoring",
+  title: "Free Online Cron Job Scheduler, API Tester and Webhook Monitor",
   description:
-    "Cron Job Free lets you create, schedule, verify and debug HTTP cron jobs. Use the webhook test URLs, API tester, AI dev assistant and monitoring dashboard to keep your scheduled tasks reliable.",
+    "CronJobs — schedule free online cron jobs with CronJob.site. Create, run and monitor HTTP cron jobs, webhook test URLs, API tests and uptime checks with our cron job scheduler.",
   alternates: { canonical: "/" },
+  keywords: [
+    "cron",
+    "cron jobs",
+    "cronjobs",
+    "cron job free",
+    "cronjobfree",
+    "cron job scheduler",
+    "free cron job",
+  ],
   openGraph: {
-    title: `${SITE_NAME} - Cron Job Scheduler, API Tester and Webhook Monitoring`,
+    title: `${SITE_NAME} - Free Cron Job Scheduler, API Tester and Webhook Monitoring`,
     description:
-      "Create, schedule, verify and debug HTTP cron jobs with a free, self-hosted scheduler, API tester, webhook test URLs and AI dev assistant.",
+      "Schedule free online cron jobs with CronJob.site. Cron job scheduler, API tester, webhook monitoring and uptime checks in one dashboard.",
     url: SITE_URL,
     type: "website",
   },

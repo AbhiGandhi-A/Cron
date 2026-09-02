@@ -54,7 +54,7 @@ const GEAR =
 export const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     id: "welcome",
-    title: "Welcome to CronJob.io",
+    title: "Welcome to cronjobs.site",
     description:
       "Automate your workflows with scheduled HTTP requests. Create cron jobs that hit your endpoints on a fixed schedule, verify the response, and get notified the moment something goes wrong.",
     icon: <Icon path={CLOCK} />,
