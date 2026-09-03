@@ -196,7 +196,23 @@ async function fetchJson<T>(
   }
 }
 
-export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse> {
+export interface CloudflareDateRange {
+  startDate?: string;
+  endDate?: string;
+}
+
+function buildRangeLabel(range?: CloudflareDateRange): { suffix: string; description: string } {
+  if (!range?.startDate || !range?.endDate) {
+    return { suffix: "24h", description: "in the last 24 hours" };
+  }
+  const start = range.startDate;
+  const end = range.endDate;
+  const suffix = `${start} to ${end}`;
+  const description = `from ${start} to ${end}`;
+  return { suffix, description };
+}
+
+export async function getCloudflareUsageData(dateRange?: CloudflareDateRange): Promise<CloudflareUsageResponse> {
   const config = getCloudflareConfigFromEnv();
 
   const token = config.apiToken.trim();
@@ -261,12 +277,24 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
 
   // 2. Query Workers Usage & Analytics (GraphQL)
   const now = new Date();
-  const startUtc = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
-  );
-  const endUtc = new Date(startUtc.getTime() + 24 * 60 * 60 * 1000);
-  const startIso = startUtc.toISOString();
-  const endIso = endUtc.toISOString();
+  const { suffix: rangeSuffix, description: rangeDescription } = buildRangeLabel(dateRange);
+
+  let startIso: string;
+  let endIso: string;
+
+  if (dateRange?.startDate && dateRange?.endDate) {
+    const startDate = new Date(dateRange.startDate + "T00:00:00.000Z");
+    const endDate = new Date(dateRange.endDate + "T23:59:59.999Z");
+    startIso = startDate.toISOString();
+    endIso = endDate.toISOString();
+  } else {
+    const startUtc = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+    );
+    const endUtc = new Date(startUtc.getTime() + 24 * 60 * 60 * 1000);
+    startIso = startUtc.toISOString();
+    endIso = endUtc.toISOString();
+  }
 
   const workerQuery = `query GetWorkerAnalytics($accountTag: string!, $datetimeStart: string!, $datetimeEnd: string!) {
     viewer {
@@ -410,14 +438,14 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
     buildMetric({
       id: "worker_requests",
       name: "Worker Requests",
-      label: "Worker Requests (24h)",
+      label: `Worker Requests (${rangeSuffix})`,
       category: "workers",
       usage: totalWorkerRequests,
       limit: workerRequestsLimit,
       resetPeriod: "Resets Daily (UTC)",
       unit: "requests",
       source: "Cloudflare GraphQL: workersInvocationsAdaptive.sum.requests",
-      description: "Total worker invocations processed across your account in the last 24 hours.",
+      description: `Total worker invocations processed across your account ${rangeDescription}.`,
     })
   );
 
@@ -427,7 +455,7 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
       buildMetric({
         id: "worker_errors",
         name: "Worker Errors",
-        label: "Worker Errors (24h)",
+        label: `Worker Errors (${rangeSuffix})`,
         category: "workers",
         usage: totalWorkerErrors,
         limit: null,
@@ -451,14 +479,14 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
       buildMetric({
         id: "worker_subrequests",
         name: "Worker Subrequests",
-        label: "Worker Subrequests (24h)",
+        label: `Worker Subrequests (${rangeSuffix})`,
         category: "workers",
         usage: totalWorkerSubrequests,
         limit: workerSubrequestsLimit,
         resetPeriod: "Resets Daily (UTC)",
         unit: "subrequests",
         source: "Cloudflare GraphQL: workersInvocationsAdaptive.sum.subrequests",
-        description: "Outbound fetch calls made by your workers in the last 24 hours.",
+        description: `Outbound fetch calls made by your workers ${rangeDescription}.`,
       })
     );
   }
@@ -613,14 +641,14 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
       buildMetric({
         id: "d1_rows_read",
         name: "D1 Rows Read",
-        label: "D1 Rows Read (24h)",
+        label: `D1 Rows Read (${rangeSuffix})`,
         category: "d1",
         usage: d1RowsRead,
         limit: d1RowsReadLimit,
         resetPeriod: "Resets Daily (UTC)",
         unit: "rows",
         source: "Cloudflare GraphQL: d1AnalyticsAdaptiveGroups.sum.rowsRead",
-        description: "Total rows read across queries in the last 24 hours.",
+        description: `Total rows read across queries ${rangeDescription}.`,
       })
     );
 
@@ -629,22 +657,24 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
       buildMetric({
         id: "d1_rows_written",
         name: "D1 Rows Written",
-        label: "D1 Rows Written (24h)",
+        label: `D1 Rows Written (${rangeSuffix})`,
         category: "d1",
         usage: d1RowsWritten,
         limit: d1RowsWrittenLimit,
         resetPeriod: "Resets Daily (UTC)",
         unit: "rows",
         source: "Cloudflare GraphQL: d1AnalyticsAdaptiveGroups.sum.rowsWritten",
-        description: "Total rows inserted, updated, or deleted in the last 24 hours.",
+        description: `Total rows inserted, updated, or deleted ${rangeDescription}.`,
       })
     );
   }
 
   // 5. Query Zone Analytics (GraphQL)
   if (zoneId) {
-    const dateStart = startUtc.toISOString().split("T")[0];
-    const dateEnd = now.toISOString().split("T")[0];
+    const zoneStartDate = new Date(startIso);
+    const zoneEndDate = new Date(endIso);
+    const dateStart = zoneStartDate.toISOString().split("T")[0];
+    const dateEnd = zoneEndDate.toISOString().split("T")[0];
 
     const zoneAnalyticsQuery = `query GetZoneAnalytics($zoneTag: string!, $dateStart: string!, $dateEnd: string!) {
       viewer {
@@ -726,7 +756,7 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
       buildMetric({
         id: "zone_requests",
         name: "Zone HTTP Requests",
-        label: "Zone Requests (24h)",
+        label: `Zone Requests (${rangeSuffix})`,
         category: "zone",
         usage: zoneRequests,
         limit: zoneRequestsLimit,
@@ -742,14 +772,14 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
         buildMetric({
           id: "zone_bandwidth",
           name: "Zone Bandwidth",
-          label: "Bandwidth Transferred (24h)",
+          label: `Bandwidth Transferred (${rangeSuffix})`,
           category: "zone",
           usage: zoneBandwidth,
           limit: zoneBandwidthLimit,
           resetPeriod: "Resets Daily (UTC)",
           unit: "bytes",
           source: "Cloudflare GraphQL: httpRequests1dGroups.sum.bytes",
-          description: "Total bytes transferred via Cloudflare CDN in the last 24 hours.",
+          description: `Total bytes transferred via Cloudflare CDN ${rangeDescription}.`,
         })
       );
     }
@@ -760,7 +790,7 @@ export async function getCloudflareUsageData(): Promise<CloudflareUsageResponse>
         buildMetric({
           id: "zone_cached_requests",
           name: "Cached Requests",
-          label: "Cached Requests (24h)",
+          label: `Cached Requests (${rangeSuffix})`,
           category: "zone",
           usage: zoneCachedRequests,
           limit: cacheTarget,

@@ -154,6 +154,12 @@ export default function AdminDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [deletingLogs, setDeletingLogs] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [appliedStart, setAppliedStart] = useState("");
+  const [appliedEnd, setAppliedEnd] = useState("");
+  const [filterError, setFilterError] = useState("");
+  const [filtering, setFiltering] = useState(false);
 
   useEffect(() => {
     const cached = localStorage.getItem("adminDashboardStatsCache");
@@ -172,19 +178,25 @@ export default function AdminDashboard() {
     fetchStats();
   }, []);
 
-  const fetchStats = async () => {
+  const fetchStats = async (start?: string, end?: string) => {
     try {
       setRefreshing(true);
       const token = localStorage.getItem("adminAuthToken");
       if (!token) return;
 
-      const res = await fetch("/api/admin/stats", {
+      const queryParams = new URLSearchParams();
+      if (start) queryParams.set("start", start);
+      if (end) queryParams.set("end", end);
+      const queryString = queryParams.toString();
+
+      const res = await fetch(`/api/admin/stats${queryString ? `?${queryString}` : ""}`, {
         headers: { Authorization: token },
         cache: "no-store",
       });
 
       if (!res.ok) {
-        throw new Error(`Failed to fetch stats (HTTP ${res.status})`);
+        const errBody = await res.json().catch(() => null);
+        throw new Error(errBody?.error || `Failed to fetch stats (HTTP ${res.status})`);
       }
 
       const data = await res.json();
@@ -194,7 +206,10 @@ export default function AdminDashboard() {
       };
       setStats(nextStats);
       try {
-        localStorage.setItem("adminDashboardStatsCache", JSON.stringify(nextStats));
+        localStorage.setItem(
+          "adminDashboardStatsCache",
+          JSON.stringify({ ...nextStats, appliedRange: start || end ? { start, end } : null })
+        );
       } catch {
         // Storage may be unavailable - non-critical
       }
@@ -205,6 +220,46 @@ export default function AdminDashboard() {
       setLoading(false);
       setRefreshing(false);
     }
+  };
+
+  const applyDateFilter = () => {
+    setFilterError("");
+
+    if (!startDate && !endDate) {
+      setAppliedStart("");
+      setAppliedEnd("");
+      setFiltering(true);
+      fetchStats();
+      return;
+    }
+
+    const start = startDate ? new Date(startDate + "T00:00:00") : null;
+    const end = endDate ? new Date(endDate + "T23:59:59") : null;
+
+    if (start && end && start.getTime() > end.getTime()) {
+      setFilterError("Start date cannot be after end date.");
+      return;
+    }
+
+    if (end && end.getTime() > Date.now()) {
+      setFilterError("End date cannot be in the future.");
+      return;
+    }
+
+    setAppliedStart(startDate);
+    setAppliedEnd(endDate);
+    setFiltering(true);
+    fetchStats(startDate || undefined, endDate || undefined);
+  };
+
+  const clearDateFilter = () => {
+    setStartDate("");
+    setEndDate("");
+    setAppliedStart("");
+    setAppliedEnd("");
+    setFilterError("");
+    setFiltering(true);
+    fetchStats();
   };
 
   const clearExecutionLogs = async () => {
@@ -229,7 +284,7 @@ export default function AdminDashboard() {
 
       const data = await res.json();
       setToast({ message: data.message || "Execution logs deleted successfully", type: "success" });
-      await fetchStats();
+      await fetchStats(appliedStart || undefined, appliedEnd || undefined);
     } catch (err) {
       setToast({
         message: err instanceof Error ? err.message : "Failed to clear execution logs",
@@ -255,7 +310,7 @@ export default function AdminDashboard() {
         <div className="font-bold text-lg">Unable to load dashboard</div>
         <p className="text-sm text-red-700">{error || "Could not connect to admin statistics API."}</p>
         <button
-          onClick={fetchStats}
+          onClick={() => fetchStats(appliedStart || undefined, appliedEnd || undefined)}
           className="px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-semibold hover:bg-red-700 transition"
         >
           Try Again
@@ -318,7 +373,7 @@ export default function AdminDashboard() {
           </div>
 
           <button
-            onClick={fetchStats}
+            onClick={() => fetchStats(appliedStart || undefined, appliedEnd || undefined)}
             disabled={refreshing}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition disabled:opacity-60 cursor-pointer"
           >
@@ -430,11 +485,88 @@ export default function AdminDashboard() {
         </div>
       </section>
 
+      {/* Section 2.5: Cloudflare Analytics Date Range Filter */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
+        <div className="border-b border-slate-100 pb-3">
+          <h2 className="text-base font-bold text-slate-900">Cloudflare Analytics Date Range</h2>
+          <p className="text-xs text-slate-500">Select a date range to view Cloudflare analytics for that period</p>
+        </div>
+
+        <div className="flex flex-col lg:flex-row lg:items-end gap-3">
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="cf-start-date" className="text-xs font-semibold text-slate-600">
+              Start Date
+            </label>
+            <input
+              id="cf-start-date"
+              type="date"
+              value={startDate}
+              max={endDate || undefined}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="px-3 py-2 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="cf-end-date" className="text-xs font-semibold text-slate-600">
+              End Date
+            </label>
+            <input
+              id="cf-end-date"
+              type="date"
+              value={endDate}
+              min={startDate || undefined}
+              max={new Date().toISOString().split("T")[0]}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="px-3 py-2 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={applyDateFilter}
+              disabled={filtering || refreshing}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition disabled:opacity-60 cursor-pointer"
+            >
+              {filtering ? "Applying..." : "Apply"}
+            </button>
+            {(startDate || endDate) && (
+              <button
+                onClick={clearDateFilter}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-600 text-xs font-semibold transition cursor-pointer"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+
+        {filterError && (
+          <p className="text-xs font-medium text-red-600">{filterError}</p>
+        )}
+
+        <div className="text-xs text-slate-500 border-t border-slate-100 pt-3">
+          {appliedStart && appliedEnd ? (
+            <span className="inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-3 py-1 font-medium">
+              Showing analytics from {appliedStart} to {appliedEnd}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 bg-slate-100 text-slate-600 border border-slate-200 rounded-full px-3 py-1 font-medium">
+              Showing last 24 hours (default)
+            </span>
+          )}
+        </div>
+      </section>
+
       {/* Section 3: Workers Usage */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-base font-bold text-slate-900">Workers Analytics (Real 24h Data)</h2>
+            <h2 className="text-base font-bold text-slate-900">
+              {appliedStart && appliedEnd
+                ? `Workers Analytics (${appliedStart} to ${appliedEnd})`
+                : "Workers Analytics (Real 24h Data)"}
+            </h2>
             <p className="text-xs text-slate-500">Live query from Cloudflare GraphQL workersInvocationsAdaptive</p>
           </div>
         </div>

@@ -30,6 +30,41 @@ export async function GET(req: NextRequest) {
 
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
+    const { searchParams } = new URL(req.url);
+    const startParam = searchParams.get("start");
+    const endParam = searchParams.get("end");
+
+    let dateRange: { startDate?: string; endDate?: string } | undefined;
+
+    if (startParam || endParam) {
+      const startDate = startParam ? new Date(startParam + "T00:00:00.000Z") : null;
+      const endDate = endParam ? new Date(endParam + "T23:59:59.999Z") : null;
+
+      if (startDate && isNaN(startDate.getTime())) {
+        return NextResponse.json({ error: "Invalid start date" }, { status: 400 });
+      }
+      if (endDate && isNaN(endDate.getTime())) {
+        return NextResponse.json({ error: "Invalid end date" }, { status: 400 });
+      }
+
+      const now = Date.now();
+      if (endDate && endDate.getTime() > now) {
+        return NextResponse.json({ error: "End date cannot be in the future" }, { status: 400 });
+      }
+
+      if (startDate && endDate && startDate.getTime() > endDate.getTime()) {
+        return NextResponse.json(
+          { error: "Start date cannot be after end date" },
+          { status: 400 }
+        );
+      }
+
+      dateRange = {
+        ...(startParam ? { startDate: startParam } : {}),
+        ...(endParam ? { endDate: endParam } : {}),
+      };
+    }
+
     const [
       totalUsers,
       activeUsers,
@@ -51,7 +86,7 @@ export async function GET(req: NextRequest) {
       JobExecution.countDocuments({ startedAt: { $gte: today }, status: "FAILED" }),
       JobExecution.countDocuments(),
       getRealtimeTempMailStats(),
-      getCloudflareUsageData().catch((cfErr) => {
+      getCloudflareUsageData(dateRange).catch((cfErr) => {
         logError("admin-stats", "Cloudflare usage fetch failed", cfErr);
         return null;
       }),
