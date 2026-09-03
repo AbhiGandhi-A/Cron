@@ -29,6 +29,7 @@ interface CloudflareResourceMetric {
   unit?: string;
   source?: string;
   description?: string;
+  limitLabel?: string;
 }
 
 interface Stats {
@@ -219,6 +220,7 @@ export default function AdminDashboard() {
     } finally {
       setLoading(false);
       setRefreshing(false);
+      setFiltering(false);
     }
   };
 
@@ -624,7 +626,11 @@ export default function AdminDashboard() {
                     <div>
                       <span className="text-slate-400 block">Plan Limit</span>
                       <span className="font-semibold text-slate-700">
-                        {hasNumericLimit ? formatNumber(metric.limit) : "Unavailable"}
+                        {hasNumericLimit
+                          ? metric.limitLabel
+                            ? metric.limitLabel
+                            : formatNumber(metric.limit)
+                          : "Unavailable"}
                       </span>
                     </div>
                     <div>
@@ -729,7 +735,7 @@ export default function AdminDashboard() {
                     <div>
                       <span className="text-slate-400 block">Plan Limit</span>
                       <span className="font-semibold text-slate-700">
-                        {hasLimit ? formattedLimit : "Unavailable"}
+                        {hasLimit ? (metric.limitLabel ? metric.limitLabel : formattedLimit) : "Unavailable"}
                       </span>
                     </div>
                     <div>
@@ -828,7 +834,7 @@ export default function AdminDashboard() {
                     <div>
                       <span className="text-slate-400 block">Plan Limit</span>
                       <span className="font-semibold text-slate-700">
-                        {hasLimit ? formattedLimit : "Unmetered (CDN)"}
+                        {hasLimit ? (metric.limitLabel ? metric.limitLabel : formattedLimit) : "Unmetered (CDN)"}
                       </span>
                     </div>
                     <div>

@@ -42,6 +42,7 @@ export interface CloudflareMetric {
   unit?: string;
   source: string;
   description?: string;
+  limitLabel?: string;
 }
 
 export interface CloudflareUsageResponse {
@@ -102,6 +103,7 @@ export function buildMetric(options: {
   source: string;
   description?: string;
   forcedStatus?: CloudflareMetricStatus;
+  limitLabel?: string;
 }): CloudflareMetric {
   const {
     id,
@@ -115,6 +117,7 @@ export function buildMetric(options: {
     source,
     description,
     forcedStatus,
+    limitLabel,
   } = options;
 
   const { remaining, percentage } = computeDerivedMetrics(usage, limit);
@@ -151,6 +154,7 @@ export function buildMetric(options: {
     unit,
     source,
     description,
+    limitLabel,
   };
 }
 
@@ -210,6 +214,27 @@ function buildRangeLabel(range?: CloudflareDateRange): { suffix: string; descrip
   const suffix = `${start} to ${end}`;
   const description = `from ${start} to ${end}`;
   return { suffix, description };
+}
+
+function rangeDayCount(range?: CloudflareDateRange): number {
+  if (!range?.startDate || !range?.endDate) return 1;
+  const start = new Date(range.startDate + "T00:00:00.000Z").getTime();
+  const end = new Date(range.endDate + "T00:00:00.000Z").getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return 1;
+  const days = (end - start) / (24 * 60 * 60 * 1000) + 1;
+  return Math.max(1, Math.ceil(days));
+}
+
+function scaledDailyLimit(
+  perDayLimit: number | null,
+  days: number
+): { limit: number | null; label: string | undefined; perDay: number | null } {
+  if (perDayLimit === null) return { limit: null, label: undefined, perDay: null };
+  return {
+    limit: perDayLimit * days,
+    label: `${perDayLimit.toLocaleString()}/day`,
+    perDay: perDayLimit,
+  };
 }
 
 export async function getCloudflareUsageData(dateRange?: CloudflareDateRange): Promise<CloudflareUsageResponse> {
@@ -278,6 +303,8 @@ export async function getCloudflareUsageData(dateRange?: CloudflareDateRange): P
   // 2. Query Workers Usage & Analytics (GraphQL)
   const now = new Date();
   const { suffix: rangeSuffix, description: rangeDescription } = buildRangeLabel(dateRange);
+  const rangeDays = rangeDayCount(dateRange);
+  const isCustomRange = Boolean(dateRange?.startDate && dateRange?.endDate);
 
   let startIso: string;
   let endIso: string;
@@ -434,6 +461,8 @@ export async function getCloudflareUsageData(dateRange?: CloudflareDateRange): P
   );
 
   // Worker Requests Metric
+  const { limit: workerRequestsEffectiveLimit, label: workerRequestsLimitLabel, perDay: workerRequestsPerDay } =
+    scaledDailyLimit(workerRequestsLimit, rangeDays);
   resources.push(
     buildMetric({
       id: "worker_requests",
@@ -441,11 +470,14 @@ export async function getCloudflareUsageData(dateRange?: CloudflareDateRange): P
       label: `Worker Requests (${rangeSuffix})`,
       category: "workers",
       usage: totalWorkerRequests,
-      limit: workerRequestsLimit,
+      limit: workerRequestsEffectiveLimit,
+      limitLabel: workerRequestsLimitLabel,
       resetPeriod: "Resets Daily (UTC)",
       unit: "requests",
       source: "Cloudflare GraphQL: workersInvocationsAdaptive.sum.requests",
-      description: `Total worker invocations processed across your account ${rangeDescription}.`,
+      description: `Total worker invocations processed across your account ${rangeDescription}. Plan limit reflects ${
+        workerRequestsPerDay?.toLocaleString() ?? "N/A"
+      } requests per day${isCustomRange ? ` across ${rangeDays} UTC day(s)` : ""}.`,
     })
   );
 
@@ -475,6 +507,11 @@ export async function getCloudflareUsageData(dateRange?: CloudflareDateRange): P
 
   // Worker Subrequests Metric
   if (totalWorkerSubrequests !== null) {
+    const {
+      limit: workerSubrequestsEffectiveLimit,
+      label: workerSubrequestsLimitLabel,
+      perDay: workerSubrequestsPerDay,
+    } = scaledDailyLimit(workerSubrequestsLimit, rangeDays);
     resources.push(
       buildMetric({
         id: "worker_subrequests",
@@ -482,14 +519,204 @@ export async function getCloudflareUsageData(dateRange?: CloudflareDateRange): P
         label: `Worker Subrequests (${rangeSuffix})`,
         category: "workers",
         usage: totalWorkerSubrequests,
-        limit: workerSubrequestsLimit,
+        limit: workerSubrequestsEffectiveLimit,
+        limitLabel: workerSubrequestsLimitLabel,
         resetPeriod: "Resets Daily (UTC)",
         unit: "subrequests",
         source: "Cloudflare GraphQL: workersInvocationsAdaptive.sum.subrequests",
-        description: `Outbound fetch calls made by your workers ${rangeDescription}.`,
+        description: `Outbound fetch calls made by your workers ${rangeDescription}. Plan limit reflects ${
+          workerSubrequestsPerDay?.toLocaleString() ?? "N/A"
+        } subrequests per day${isCustomRange ? ` across ${rangeDays} UTC day(s)` : ""}.`,
       })
     );
   }
+
+  // 2b. Observability Events Usage (rest of current day)
+  const nowMs = now.getTime();
+  const observabilityFrom = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const observabilityUsageRes = await fetchJson<{
+    result?: unknown;
+    success?: boolean;
+    errors?: Array<{ message?: string }>;
+  }>(
+    `/accounts/${encodeURIComponent(accountId)}/workers/observability/usage?from=${observabilityFrom}&to=${nowMs}`,
+    token
+  );
+
+  let observabilityCurrentDay: number | null = null;
+  if (observabilityUsageRes.ok && observabilityUsageRes.data?.result != null) {
+    const result = observabilityUsageRes.data.result as unknown;
+    let totalToday = 0;
+    let found = false;
+
+    if (Array.isArray(result)) {
+      for (const entry of result) {
+        if (entry == null || typeof entry !== "object") continue;
+        const obj = entry as Record<string, unknown>;
+        const val =
+          safeNumber(obj.count, null) ??
+          safeNumber(obj.events, null) ??
+          safeNumber(obj.value, null) ??
+          safeNumber(obj.total, null) ??
+          safeNumber(obj.minutes, null) ??
+          safeNumber(obj.units, null) ??
+          safeNumber(obj.usage, null);
+        if (val !== null) {
+          totalToday += val;
+          found = true;
+        }
+      }
+      if (totalToday === 0 && Array.isArray(result)) {
+        for (const entry of result) {
+          if (entry == null || typeof entry !== "object") continue;
+          const val = (entry as Record<string, unknown>)["totals"];
+          if (val && typeof val === "object") {
+            for (const v of Object.values(val as Record<string, unknown>)) {
+              const n = safeNumber(v, null);
+              if (n !== null) {
+                totalToday += n;
+                found = true;
+              }
+            }
+          }
+        }
+      }
+    } else if (typeof result === "object") {
+      const obj = result as Record<string, unknown>;
+      const nested = ["total", "count", "events", "value"];
+      for (const key of nested) {
+        const n = safeNumber(obj[key], null);
+        if (n !== null) {
+          totalToday += n;
+          found = true;
+        }
+      }
+      if (!found && obj && typeof obj === "object") {
+        for (const value of Object.values(obj)) {
+          if (value && typeof value === "object") {
+            for (const v of Object.values(value as Record<string, unknown>)) {
+              const n = safeNumber(v, null);
+              if (n !== null) {
+                totalToday += n;
+                found = true;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (found) {
+      observabilityCurrentDay = totalToday;
+    }
+  }
+
+  resources.push(
+    buildMetric({
+      id: "worker_observability_events",
+      name: "Observability Events",
+      label: "Observability Events (Today)",
+      category: "workers",
+      usage: observabilityCurrentDay,
+      limit: 200000,
+      resetPeriod: "Resets Daily (UTC)",
+      unit: "events",
+      source: "Cloudflare REST: /accounts/{id}/workers/observability/usage",
+      description: "Workers observability log/trace events written for the current UTC day.",
+    })
+  );
+
+  // 2c. Workers Build Minutes (current billing month)
+  const buildsLimitsRes = await fetchJson<{
+    result?: {
+      build_minutes_refresh_on?: string;
+      has_reached_build_minutes_limit?: boolean;
+    };
+    success?: boolean;
+  }>(`/accounts/${encodeURIComponent(accountId)}/builds/account/limits`, token);
+
+  let buildMinutesBillingEnd = buildsLimitsRes.data?.result?.build_minutes_refresh_on ?? null;
+
+  const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const billableUsageRes = await fetchJson<{
+    result?: Array<{
+      ChargeDescription?: string;
+      ChargePeriodStart?: string;
+      ChargePeriodEnd?: string;
+      ConsumedQuantity?: unknown;
+      PricingQuantity?: unknown;
+      CumulatedPricingQuantity?: unknown;
+      ServiceName?: string;
+      ServiceFamilyName?: string;
+      x_BillableMetricId?: string;
+      x_BillableMetricName?: string;
+      BillingPeriodStart?: string;
+      BillingPeriodEnd?: string;
+    }>;
+    success?: boolean;
+    errors?: Array<{ message?: string }>;
+  }>(
+    `/accounts/${encodeURIComponent(accountId)}/billable/usage?from=${encodeURIComponent(
+      currentMonthStart
+    )}&to=${encodeURIComponent(now.toISOString())}`,
+    token
+  );
+
+  let buildMinutesUsed: number | null = null;
+  if (billableUsageRes.ok && Array.isArray(billableUsageRes.data?.result)) {
+    const rows = billableUsageRes.data.result;
+    const buildRow = rows.find((r) => {
+      const desc =
+        r.ChargeDescription ||
+        r.ServiceName ||
+        r.x_BillableMetricName ||
+        r.x_BillableMetricId ||
+        "";
+      return /build|minute/i.test(desc);
+    });
+    const quantity = buildRow
+      ? safeNumber(buildRow.CumulatedPricingQuantity ?? buildRow.PricingQuantity ?? buildRow.ConsumedQuantity, null)
+      : null;
+
+    if (quantity !== null && Number.isFinite(quantity)) {
+      buildMinutesUsed = quantity;
+    }
+  }
+
+  let buildMinutesResetLabel = "Monthly";
+  if (buildMinutesBillingEnd) {
+    const endDate = new Date(buildMinutesBillingEnd);
+    if (!isNaN(endDate.getTime())) {
+      const month = endDate.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
+      const year = endDate.getUTCFullYear();
+      buildMinutesResetLabel = `Resets ${month} ${year}`;
+    }
+  }
+
+  const buildMinutesLimit: number | null = 3000;
+
+  const buildMinutesPeriodLabel =
+    buildMinutesBillingEnd && buildMinutesUsed !== null
+      ? new Date(buildMinutesBillingEnd).toISOString().slice(0, 10)
+      : null;
+
+  resources.push(
+    buildMetric({
+      id: "worker_build_minutes",
+      name: "Workers Build Minutes",
+      label: `Workers Build Minutes (${buildMinutesPeriodLabel || "This Month"})`,
+      category: "workers",
+      usage: buildMinutesUsed,
+      limit: buildMinutesLimit,
+      resetPeriod: buildMinutesResetLabel,
+      unit: "minutes",
+      source: "Cloudflare REST: /accounts/{id}/billable/usage + /builds/account/limits",
+      description:
+        buildMinutesPeriodLabel
+          ? `Build minutes consumed for the billing period ending ${buildMinutesPeriodLabel}.`
+          : "Build minutes consumed for the current billing month.",
+    })
+  );
 
   // 3. Worker Script Details (REST)
   let workerRef: CloudflareWorkerRef | null = workerName ? { name: workerName } : null;
@@ -637,6 +864,11 @@ export async function getCloudflareUsageData(dateRange?: CloudflareDateRange): P
     }
 
     // D1 Rows Read Metric
+    const {
+      limit: d1RowsReadEffectiveLimit,
+      label: d1RowsReadLimitLabel,
+      perDay: d1RowsReadPerDay,
+    } = scaledDailyLimit(d1RowsReadLimit, rangeDays);
     resources.push(
       buildMetric({
         id: "d1_rows_read",
@@ -644,15 +876,23 @@ export async function getCloudflareUsageData(dateRange?: CloudflareDateRange): P
         label: `D1 Rows Read (${rangeSuffix})`,
         category: "d1",
         usage: d1RowsRead,
-        limit: d1RowsReadLimit,
+        limit: d1RowsReadEffectiveLimit,
+        limitLabel: d1RowsReadLimitLabel,
         resetPeriod: "Resets Daily (UTC)",
         unit: "rows",
         source: "Cloudflare GraphQL: d1AnalyticsAdaptiveGroups.sum.rowsRead",
-        description: `Total rows read across queries ${rangeDescription}.`,
+        description: `Total rows read across queries ${rangeDescription}. Plan limit reflects ${
+          d1RowsReadPerDay?.toLocaleString() ?? "N/A"
+        } rows per day${isCustomRange ? ` across ${rangeDays} UTC day(s)` : ""}.`,
       })
     );
 
     // D1 Rows Written Metric
+    const {
+      limit: d1RowsWrittenEffectiveLimit,
+      label: d1RowsWrittenLimitLabel,
+      perDay: d1RowsWrittenPerDay,
+    } = scaledDailyLimit(d1RowsWrittenLimit, rangeDays);
     resources.push(
       buildMetric({
         id: "d1_rows_written",
@@ -660,11 +900,14 @@ export async function getCloudflareUsageData(dateRange?: CloudflareDateRange): P
         label: `D1 Rows Written (${rangeSuffix})`,
         category: "d1",
         usage: d1RowsWritten,
-        limit: d1RowsWrittenLimit,
+        limit: d1RowsWrittenEffectiveLimit,
+        limitLabel: d1RowsWrittenLimitLabel,
         resetPeriod: "Resets Daily (UTC)",
         unit: "rows",
         source: "Cloudflare GraphQL: d1AnalyticsAdaptiveGroups.sum.rowsWritten",
-        description: `Total rows inserted, updated, or deleted ${rangeDescription}.`,
+        description: `Total rows inserted, updated, or deleted ${rangeDescription}. Plan limit reflects ${
+          d1RowsWrittenPerDay?.toLocaleString() ?? "N/A"
+        } rows per day${isCustomRange ? ` across ${rangeDays} UTC day(s)` : ""}.`,
       })
     );
   }
@@ -752,6 +995,11 @@ export async function getCloudflareUsageData(dateRange?: CloudflareDateRange): P
       }
     }
 
+    const {
+      limit: zoneRequestsEffectiveLimit,
+      label: zoneRequestsLimitLabel,
+      perDay: zoneRequestsPerDay,
+    } = scaledDailyLimit(zoneRequestsLimit, rangeDays);
     resources.push(
       buildMetric({
         id: "zone_requests",
@@ -759,15 +1007,21 @@ export async function getCloudflareUsageData(dateRange?: CloudflareDateRange): P
         label: `Zone Requests (${rangeSuffix})`,
         category: "zone",
         usage: zoneRequests,
-        limit: zoneRequestsLimit,
+        limit: zoneRequestsEffectiveLimit,
+        limitLabel: zoneRequestsLimitLabel,
         resetPeriod: "Resets Daily (UTC)",
         unit: "requests",
         source: "Cloudflare GraphQL: httpRequests1dGroups.sum.requests",
-        description: `Inbound HTTP traffic delivered to zone ${zoneRef?.name || zoneId}.`,
+        description: `Inbound HTTP traffic delivered to zone ${
+          zoneRef?.name || zoneId
+        }. Plan limit reflects ${zoneRequestsPerDay?.toLocaleString() ?? "N/A"} requests per day${
+          isCustomRange ? ` across ${rangeDays} UTC day(s)` : ""
+        }.`,
       })
     );
 
     if (zoneBandwidth !== null) {
+      const { limit: zoneBandwidthEffectiveLimit } = scaledDailyLimit(zoneBandwidthLimit, rangeDays);
       resources.push(
         buildMetric({
           id: "zone_bandwidth",
@@ -775,11 +1029,14 @@ export async function getCloudflareUsageData(dateRange?: CloudflareDateRange): P
           label: `Bandwidth Transferred (${rangeSuffix})`,
           category: "zone",
           usage: zoneBandwidth,
-          limit: zoneBandwidthLimit,
+          limit: zoneBandwidthEffectiveLimit,
+          limitLabel: isCustomRange ? "Daily Bandwidth" : undefined,
           resetPeriod: "Resets Daily (UTC)",
           unit: "bytes",
           source: "Cloudflare GraphQL: httpRequests1dGroups.sum.bytes",
-          description: `Total bytes transferred via Cloudflare CDN ${rangeDescription}.`,
+          description: `Total bytes transferred via Cloudflare CDN ${rangeDescription}. Plan limit reflects daily bandwidth${
+            isCustomRange ? ` across ${rangeDays} UTC day(s)` : ""
+          }.`,
         })
       );
     }
