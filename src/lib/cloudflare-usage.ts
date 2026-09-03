@@ -68,6 +68,30 @@ export function safeNumber(value: unknown, fallback: number | null = null): numb
   return fallback;
 }
 
+function coerceQuantity(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+    return null;
+  }
+  if (value && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    const preferred = ["minute", "minutes", "min", "count", "requests", "request"];
+    for (const key of preferred) {
+      if (key in obj) {
+        const n = safeNumber(obj[key], null);
+        if (n !== null) return n;
+      }
+    }
+    for (const k of Object.keys(obj)) {
+      const n = safeNumber(obj[k], null);
+      if (n !== null) return n;
+    }
+  }
+  return null;
+}
+
 export function computeDerivedMetrics(usage: number | null, limit: number | null): {
   remaining: number | null;
   percentage: number | null;
@@ -650,6 +674,8 @@ export async function getCloudflareUsageData(dateRange?: CloudflareDateRange): P
       ServiceFamilyName?: string;
       x_BillableMetricId?: string;
       x_BillableMetricName?: string;
+      x_ProductFamilyName?: string;
+      x_ProductCategoryName?: string;
       BillingPeriodStart?: string;
       BillingPeriodEnd?: string;
     }>;
@@ -665,21 +691,36 @@ export async function getCloudflareUsageData(dateRange?: CloudflareDateRange): P
   let buildMinutesUsed: number | null = null;
   if (billableUsageRes.ok && Array.isArray(billableUsageRes.data?.result)) {
     const rows = billableUsageRes.data.result;
-    const buildRow = rows.find((r) => {
-      const desc =
-        r.ChargeDescription ||
-        r.ServiceName ||
-        r.x_BillableMetricName ||
-        r.x_BillableMetricId ||
-        "";
-      return /build|minute/i.test(desc);
-    });
-    const quantity = buildRow
-      ? safeNumber(buildRow.CumulatedPricingQuantity ?? buildRow.PricingQuantity ?? buildRow.ConsumedQuantity, null)
-      : null;
 
-    if (quantity !== null && Number.isFinite(quantity)) {
-      buildMinutesUsed = quantity;
+    const isBuildMinutesRow = (r: (typeof rows)[number]): boolean => {
+      const haystack = [
+        r.ChargeDescription,
+        r.ServiceName,
+        r.ServiceFamilyName,
+        r.x_BillableMetricName,
+        r.x_BillableMetricId,
+        r.x_ProductFamilyName,
+        r.x_ProductCategoryName,
+      ]
+        .filter(Boolean)
+        .join(" ");
+      return /work(er|ers)?[\s-]*(build|deploy)|build|minute/i.test(haystack);
+    };
+
+    let total = 0;
+    let found = false;
+    for (const r of rows) {
+      if (!isBuildMinutesRow(r)) continue;
+      found = true;
+      total +=
+        coerceQuantity(r.ConsumedQuantity) ??
+        coerceQuantity(r.CumulatedPricingQuantity) ??
+        coerceQuantity(r.PricingQuantity) ??
+        0;
+    }
+
+    if (found && Number.isFinite(total)) {
+      buildMinutesUsed = total;
     }
   }
 
